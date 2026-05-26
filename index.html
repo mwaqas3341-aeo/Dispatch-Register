@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Dispatch Register Portal</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ═══════════════════════════════════════════
+       DESIGN TOKENS
+    ═══════════════════════════════════════════ */
+    :root {
+      --navy:    #001f5b;
+      --navy2:   #003087;
+      --navy3:   #0a4aad;
+      --gold:    #c9a227;
+      --gold2:   #f0c040;
+      --green:   #1a7a3a;
+      --green2:  #28a852;
+      --red:     #c0392b;
+      --red2:    #e74c3c;
+      --bg:      #eef2f9;
+      --surface: #f7f9fd;
+      --card:    #ffffff;
+      --border:  #d4daf0;
+      --txt:     #0f1d40;
+      --sub:     #5a6690;
+      --radius:  14px;
+      --radius-sm: 9px;
+      --sh:      0 2px 16px rgba(0,31,91,.08);
+      --sh-md:   0 6px 28px rgba(0,31,91,.13);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--txt);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ═══════════════════════════════════════════
+       SETUP OVERLAY
+    ═══════════════════════════════════════════ */
+    #setupOverlay {
+      position: fixed;
+      inset: 0; z-index: 9999;
+      background: linear-gradient(145deg, #000a24 0%, #001f5b 50%, #001a08 100%);
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+
+    .setup-box {
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 22px;
+      padding: 40px 34px; max-width: 500px; width: 100%;
+      text-align: center; backdrop-filter: blur(20px);
+      box-shadow: 0 30px 80px rgba(0,0,0,.6);
+    }
+
+    .setup-icon {
+      width: 72px; height: 72px; border-radius: 50%;
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      font-size: 1.7rem; margin-bottom: 18px;
+      box-shadow: 0 0 0 12px rgba(201,162,39,.12);
+    }
+    .si-gold  { background: linear-gradient(135deg, var(--gold), #f0d060); color: #001433; }
+    .si-green { background: linear-gradient(135deg, #00bb44, #00ee55); color: #fff; }
+    .si-red   { background: linear-gradient(135deg, var(--red), #e74c3c); color: #fff; }
+
+    .setup-box h2   { color: #fff; font-size: 1.4rem; font-weight: 800; margin-bottom: 6px; }
+    .setup-box .sub { color: rgba(255,255,255,.55); font-size: .88rem; line-height: 1.7; margin-bottom: 20px; }
+
+    .user-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,.09);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 40px; padding: 7px 18px; color: #fff; font-size: .84rem; margin-bottom: 20px;
+    }
+
+    .perm-item {
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 10px;
+      padding: 11px 14px; display: flex; align-items: flex-start;
+      gap: 11px; color: rgba(255,255,255,.78); font-size: .84rem; line-height: 1.55; margin-bottom: 8px;
+    }
+    .pi-icon { min-width: 26px; font-size: 1rem; color: var(--gold); text-align: center; }
+
+    .btn-allow {
+      background: linear-gradient(135deg, var(--gold), #f0d060);
+      color: #001433; border: none;
+      padding: 13px 30px; font-weight: 800;
+      border-radius: 10px; font-size: .96rem; width: 100%; margin-top: 18px;
+      cursor: pointer; font-family: inherit; letter-spacing: .3px;
+      transition: opacity .2s, transform .15s;
+    }
+    .btn-allow:hover    { opacity: .88; transform: translateY(-1px); }
+    .btn-allow:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .setup-progress { margin-top: 12px; min-height: 18px; color: rgba(255,255,255,.48); font-size: .8rem; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin-ring {
+      display: inline-block; width: 15px; height: 15px;
+      border: 2px solid rgba(201,162,39,.3); border-top-color: var(--gold);
+      border-radius: 50%; animation: spin .75s linear infinite; vertical-align: middle; margin-right: 6px;
+    }
+    .spin-sm {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(0,35,102,.2); border-top-color: var(--navy2);
+      border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle;
+    }
+
+    /* ═══════════════════════════════════════════
+       TOP BAR
+    ═══════════════════════════════════════════ */
+    #mainApp { display: none; }
+
+    .topbar {
+      background: linear-gradient(90deg, var(--navy), var(--navy2));
+      border-bottom: 3px solid var(--gold);
+      padding: 10px 18px; position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 16px rgba(0,0,0,.25);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px;
+    }
+    .topbar-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .tb-icon {
+      width: 38px; height: 38px; border-radius: 9px; flex-shrink: 0;
+      background: var(--gold); display: flex; align-items: center; justify-content: center;
+      color: var(--navy); font-size: 1rem;
+    }
+    .tb-title { font-size: .95rem; font-weight: 800; color: #fff; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tb-sub   { font-size: .68rem; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-chip {
+      background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+      border-radius: 30px;
+      padding: 4px 12px 4px 5px;
+      display: flex; align-items: center; gap: 7px; font-size: .78rem; color: #fff; flex-shrink: 0;
+    }
+    .user-avatar {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--gold);
+      color: var(--navy);
+      display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .74rem;
+    }
+    .chip-email { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ═══════════════════════════════════════════
+       STATS BAR (dashboard row)
+    ═══════════════════════════════════════════ */
+    .stats-bar {
+      background: linear-gradient(90deg, var(--navy), var(--navy2));
+      padding: 10px 18px; display: flex; gap: 10px; overflow-x: auto;
+      border-bottom: 1px solid rgba(255,255,255,.1); scrollbar-width: none;
+    }
+    .stats-bar::-webkit-scrollbar { display: none; }
+    .stat-pill {
+      background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 30px; padding: 5px 14px; white-space: nowrap;
+      font-size: .78rem; color: rgba(255,255,255,.9); display: flex; align-items: center; gap: 7px;
+    }
+    .stat-pill strong { color: var(--gold2); font-size: .9rem; }
+
+    /* ═══════════════════════════════════════════
+       BOTTOM NAV (mobile tabs)
+    ═══════════════════════════════════════════ */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0; z-index: 90;
+      background: var(--card); border-top: 2px solid var(--border);
+      display: flex;
+      box-shadow: 0 -4px 20px rgba(0,31,91,.1);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .bn-btn {
+      flex: 1;
+      border: none; background: transparent; padding: 10px 4px 8px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      color: var(--sub); font-family: inherit;
+      cursor: pointer; font-size: .64rem;
+      font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+      transition: color .18s; position: relative;
+    }
+    .bn-btn i { font-size: 1.15rem; transition: color .18s; }
+    .bn-btn.active { color: var(--navy2); }
+    .bn-btn.active i { color: var(--navy2); }
+    .bn-btn.active::after {
+      content: '';
+      position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 28px; height: 3px; background: var(--navy2); border-radius: 0 0 4px 4px;
+    }
+
+    /* Desktop tab nav (shown on wide screens) */
+    .desktop-tabnav {
+      background: var(--card);
+      border-bottom: 2px solid var(--border); padding: 0 22px;
+      display: none; gap: 2px;
+    }
+    .dt-btn {
+      padding: 13px 22px; border: none; background: transparent; font-family: inherit;
+      font-weight: 700; font-size: .87rem; color: var(--sub); cursor: pointer;
+      border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color .18s, border-color .18s;
+    }
+    .dt-btn:hover  { color: var(--navy2); }
+    .dt-btn.active { color: var(--navy2); border-bottom-color: var(--navy2); }
+
+    @media (min-width: 768px) {
+      .bottom-nav     { display: none; }
+      .desktop-tabnav { display: flex; }
+    }
+
+    /* ═══════════════════════════════════════════
+       CONTENT
+    ═══════════════════════════════════════════ */
+    .content {
+      padding: 18px 14px 90px;
+      max-width: 1000px; margin: 0 auto;
+    }
+    @media (min-width: 768px) { .content { padding: 26px 22px 40px; } }
+
+    /* ═══════════════════════════════════════════
+       CARDS
+    ═══════════════════════════════════════════ */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border); box-shadow: var(--sh);
+      overflow: hidden; margin-bottom: 18px;
+    }
+    .card-head {
+      background: linear-gradient(135deg, var(--navy), var(--navy2));
+      color: #fff; padding: 16px 20px;
+      border-bottom: 3px solid var(--gold);
+    }
+    .card-head h3 { font-size: 1rem; font-weight: 800; margin-bottom: 2px; }
+    .card-head p  { font-size: .78rem; opacity: .7; margin: 0; }
+    .card-body    { padding: 18px 16px; }
+    @media (min-width: 768px) { .card-body { padding: 24px 26px; } }
+
+    /* ═══════════════════════════════════════════
+       FORMS
+    ═══════════════════════════════════════════ */
+    .sec {
+      font-size: .66rem;
+      font-weight: 800; text-transform: uppercase; letter-spacing: 1.8px;
+      color: var(--sub); border-bottom: 2px solid var(--border); padding-bottom: 6px;
+      margin: 22px 0 14px;
+    }
+    .lbl { font-weight: 700; font-size: .82rem; color: #2a3660; display: block; margin-bottom: 4px; }
+    .inp {
+      width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      padding: 9px 12px; font-size: .88rem; font-family: inherit; color: var(--txt);
+      background: #fff; transition: border-color .15s, box-shadow .15s;
+    }
+    .inp:focus { border-color: var(--navy2); box-shadow: 0 0 0 3px rgba(0,48,135,.1); outline: none; }
+    textarea.inp { resize: vertical; min-height: 90px; }
+
+    .dispatch-badge {
+      background: linear-gradient(135deg, #eef2ff, #dde6ff);
+      border: 2px solid var(--navy2);
+      border-radius: var(--radius-sm);
+      padding: 12px; text-align: center;
+    }
+    .dispatch-badge .dn-label { font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: var(--sub); margin-bottom: 4px; }
+    .dispatch-badge .dn-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.7rem;
+      font-weight: 700; color: var(--navy2); letter-spacing: 4px; line-height: 1;
+    }
+    .dispatch-badge .dn-pulse {
+      display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green2); margin-left: 8px; vertical-align: middle;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100%  { box-shadow: 0 0 0 0 rgba(40,168,82,.5); }
+      50%      { box-shadow: 0 0 0 6px rgba(40,168,82,0); }
+    }
+
+    /* Email notice */
+    .email-notice {
+      background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+      border: 1.5px solid #81c784; border-radius: var(--radius-sm);
+      padding: 10px 14px; font-size: .83rem; color: #1b5e20;
+      display: none; margin-top: 8px; align-items: center; gap: 10px;
+    }
+    .email-notice i { color: #388e3c; font-size: .9rem; }
+    .email-notice strong { color: #1b5e20; }
+
+    /* No email warning */
+    .no-email-notice {
+      background: #fff8e1;
+      border: 1.5px solid #ffe082; border-radius: var(--radius-sm);
+      padding: 10px 14px; font-size: .83rem; color: #7a5f00;
+      display: none; margin-top: 8px; align-items: center; gap: 8px;
+    }
+
+    /* File drop zone */
+    .file-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 18px 14px; text-align: center; cursor: pointer;
+      background: var(--surface); transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    .file-zone:hover, .file-zone.drag-over { border-color: var(--navy2); background: #eef2ff; }
+    .file-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+    .file-zone-icon { font-size: 1.5rem; color: var(--sub); margin-bottom: 6px; }
+    .file-zone-text { font-size: .82rem; color: var(--sub); }
+    .file-zone-text strong { color: var(--navy2); }
+    .file-selected { font-size: .8rem; color: var(--green); font-weight: 700; margin-top: 6px; display: none; }
+
+    /* Buttons */
+    .btn-primary-custom {
+      background: linear-gradient(135deg, var(--navy), var(--navy2));
+      color: #fff; border: none; padding: 13px 24px; font-weight: 800;
+      border-radius: var(--radius-sm); font-size: .92rem; width: 100%;
+      cursor: pointer; font-family: inherit; letter-spacing: .4px;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 14px rgba(0,31,91,.25);
+    }
+    .btn-primary-custom:hover    { opacity: .88; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,31,91,.3); }
+    .btn-primary-custom:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    .btn-gold {
+      background: linear-gradient(135deg, var(--gold), #f0d060);
+      color: #001433; border: none; padding: 10px 20px;
+      font-weight: 800; border-radius: var(--radius-sm); font-size: .86rem;
+      cursor: pointer; font-family: inherit; transition: opacity .2s, transform .15s;
+    }
+    .btn-gold:hover { opacity: .88; transform: translateY(-1px); }
+
+    .btn { border-radius: var(--radius-sm); padding: 8px 16px; font-weight: 700; font-size: .84rem; cursor: pointer; border: none; font-family: inherit; transition: opacity .18s, transform .12s; }
+    .btn:hover { opacity: .85; transform: translateY(-1px); }
+    .btn-pr  { background: var(--navy2); color: #fff; }
+    .btn-ok  { background: var(--green2); color: #fff; }
+    .btn-red { background: var(--red2); color: #fff; }
+    .btn-out { background: transparent; border: 1.5px solid var(--border); color: var(--txt); }
+    .btn-out:hover { border-color: var(--navy2); color: var(--navy2); }
+
+    /* ═══════════════════════════════════════════
+       TABLES
+    ═══════════════════════════════════════════ */
+    .dtable { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    .dtable th {
+      background: var(--navy); color: #fff; padding: 10px 12px;
+      text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .6px;
+    }
+    .dtable td { padding: 9px 12px; border-bottom: 1px solid #edf0f8; vertical-align: top; }
+    .dtable tbody tr { transition: background .15s; }
+    .dtable tbody tr:hover { background: #f3f6ff; }
+
+    .act-btn { padding: 4px 10px; border-radius: 6px; border: none; font-size: .74rem; font-weight: 700; cursor: pointer; font-family: inherit; margin: 1px; transition: opacity .15s; }
+    .act-btn:hover { opacity: .8; }
+    .ab-dl   { background: var(--green2); color: #fff; }
+    .ab-del  { background: var(--red2); color: #fff; }
+    .ab-rest { background: var(--gold); color: #001433; }
+    .ab-view { background: var(--navy2); color: #fff; }
+
+    /* ═══════════════════════════════════════════
+       PANES & ALERTS
+    ═══════════════════════════════════════════ */
+    .pane { display: none; }
+    .pane.active { display: block; }
+
+    .alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: .84rem; margin-bottom: 10px; }
+    .a-info { background: #e3f2fd; border: 1px solid #90caf9; color: #0d47a1; }
+    .a-warn { background: #fff8e1; border: 1px solid #ffe082; color: #7a5f00; }
+    .a-err  { background: #fce4ec; border: 1px solid #f48fb1; color: #880e4f; }
+    .a-ok   { background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20; }
+
+    /* ═══════════════════════════════════════════
+       MODAL
+    ═══════════════════════════════════════════ */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,10,40,.55); backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-overlay.open { display: flex; animation: fadeIn .2s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .modal-box { background: var(--card); border-radius: 18px; width: 100%; max-width: 540px; box-shadow: var(--sh-md); overflow: hidden; animation: slideUp .2s ease; }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    .modal-head {
+      background: linear-gradient(135deg, var(--navy), var(--navy2));
+      color: #fff; padding: 16px 20px; border-bottom: 3px solid var(--gold);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-head h4 { font-size: .96rem; font-weight: 800; margin: 0; }
+    .modal-close { background: transparent; border: none; color: rgba(255,255,255,.7); font-size: 1.1rem; cursor: pointer; padding: 2px 6px; line-height: 1; }
+    .modal-close:hover { color: #fff; }
+    .modal-body { padding: 20px; }
+    .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ═══════════════════════════════════════════
+       FORM SUCCESS TOAST
+    ═══════════════════════════════════════════ */
+    .toast {
+      position: fixed; top: 70px; right: 16px; z-index: 999;
+      background: var(--green); color: #fff; border-radius: 10px;
+      padding: 12px 18px; font-size: .88rem; font-weight: 700;
+      box-shadow: 0 6px 24px rgba(0,0,0,.25); max-width: 320px;
+      display: none; align-items: center; gap: 10px;
+      animation: slideIn .3s ease;
+    }
+    .toast.show { display: flex; }
+    .toast.err  { background: var(--red2); }
+    @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } }
+
+    /* ═══════════════════════════════════════════
+       SCHOOL BADGE
+    ═══════════════════════════════════════════ */
+    .emis-result { border-radius: 6px; padding: 5px 10px; font-size: .8rem; margin-top: 5px; font-weight: 600; }
+    .emis-ok  { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+    .emis-err { background: #fce4ec; color: #880e4f; border: 1px solid #f48fb1; }
+
+    /* ═══════════════════════════════════════════
+       DISPATCH DETAIL VIEW
+    ═══════════════════════════════════════════ */
+    .detail-row { display: flex; border-bottom: 1px solid #edf0f8; padding: 8px 0; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-label { font-weight: 700; font-size: .8rem; color: var(--sub); min-width: 130px; }
+    .detail-val   { font-size: .86rem; color: var(--txt); }
+
+    /* ═══════════════════════════════════════════
+       CONTACTS LIST
+    ═══════════════════════════════════════════ */
+    .contact-card {
+      border: 1.5px solid var(--border); border-radius: 10px; padding: 14px;
+      margin-bottom: 10px; cursor: pointer; transition: border-color .15s, box-shadow .15s;
+    }
+    .contact-card:hover { border-color: var(--navy2); box-shadow: 0 2px 10px rgba(0,31,91,.1); }
+    .contact-card.selected { border-color: var(--navy2); background: #f0f5ff; }
+    .cc-name    { font-weight: 800; font-size: .92rem; color: var(--navy2); }
+    .cc-officer { font-size: .8rem; color: var(--sub); }
+    .cc-email   { font-size: .78rem; color: var(--green); margin-top: 2px; }
+
+    @media (max-width: 400px) {
+      .dispatch-badge .dn-num { font-size: 1.4rem; }
+      .card-head h3 { font-size: .92rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="setupOverlay">
+  <div class="setup-box">
+
+    <div id="s-checking">
+      <div class="setup-icon si-gold"><i class="fas fa-shield-halved"></i></div>
+      <h2 id="setupOrgTitle">Dispatch Register</h2>
+      <p class="sub" id="setupCheckingText">Punjab School Education Department<br><span class="spin-ring"></span> Verifying your account...</p>
+    </div>
+
+    <div id="s-allow" style="display:none;">
+      <div class="setup-icon si-gold"><i class="fas fa-rocket"></i></div>
+      <h2 id="setupAllowTitle">Allow Access to Continue</h2>
+      <p class="sub">Your data will be stored in <strong style="color:#f0d060;">your own Google Drive</strong>. It is never shared with anyone else.</p>
+      <div class="user-badge">
+        <i class="fas fa-user-circle" style="color:var(--gold);"></i>
+        <span id="userEmailDisplay">—</span>
+      </div>
+      <div class="perm-item">
+        <span class="pi-icon"><i class="fab fa-google-drive"></i></span>
+        <span><strong>Google Drive</strong> — private spreadsheet &amp; upload folder</span>
+      </div>
+      <div class="perm-item">
+        <span class="pi-icon"><i class="fas fa-table-cells"></i></span>
+        <span><strong>Google Sheets</strong> — read &amp; write your dispatch log</span>
+      </div>
+      <div class="perm-item">
+        <span class="pi-icon"><i class="fas fa-envelope"></i></span>
+        <span><strong>Gmail</strong> — send dispatch notifications from your account</span>
+      </div>
+      <button class="btn-allow" id="allowBtn" onclick="runInitSetup()">
+        <i class="fas fa-check-circle" style="margin-right:8px;"></i>Allow Access &amp; Set Up Workspace
+      </button>
+      <p class="setup-progress" id="allowProgress"></p>
+    </div>
+
+    <div id="s-deleted" style="display:none;">
+      <div class="setup-icon si-red"><i class="fas fa-trash-alt"></i></div>
+      <h2>Workspace Not Found</h2>
+      <p class="sub" style="color:#ffcca0;">Your spreadsheet was deleted or is inaccessible. The admin has been notified. Click below to create a new workspace.</p>
+      <button class="btn-allow" id="recreateBtn" onclick="runInitSetup()">
+        <i class="fas fa-redo" style="margin-right:8px;"></i>Create New Workspace
+      </button>
+      <p class="setup-progress" id="recreateProgress"></p>
+    </div>
+
+    <div id="s-done" style="display:none;">
+      <div class="setup-icon si-green"><i class="fas fa-check"></i></div>
+      <h2>Workspace Ready!</h2>
+      <p class="sub" style="color:rgba(255,255,255,.75);">Your private spreadsheet and folder are ready in Google Drive. Loading your portal...</p>
+    </div>
+
+  </div>
+</div>
+
+<div id="mainApp">
+
+  <div class="topbar">
+    <div class="topbar-brand">
+      <div class="tb-icon"><i class="fas fa-book-open"></i></div>
+      <div style="min-width:0;">
+        <div class="tb-title" id="tbOrgName">Dispatch Register</div>
+        <div class="tb-sub"   id="tbDeptName">Punjab School Education Dept.</div>
+      </div>
+    </div>
+    <div class="user-chip">
+      <div class="user-avatar" id="userInitial">?</div>
+      <span class="chip-email" id="userEmailTop">—</span>
+    </div>
+  </div>
+
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-pill"><i class="fas fa-paper-plane" style="color:var(--gold2);"></i> Total: <strong id="st-total">—</strong></div>
+    <div class="stat-pill"><i class="fas fa-calendar-day" style="color:var(--gold2);"></i> This Month: <strong id="st-month">—</strong></div>
+    <div class="stat-pill"><i class="fas fa-building" style="color:var(--gold2);"></i> Offices: <strong id="st-offices">—</strong></div>
+    <div class="stat-pill"><i class="fas fa-trash" style="color:#ff8a80;"></i> Deleted: <strong id="st-deleted">—</strong></div>
+  </div>
+
+  <div class="desktop-tabnav">
+    <button class="dt-btn active" onclick="switchTab('dispatch',this)">
+      <i class="fas fa-paper-plane" style="margin-right:6px;"></i>New Dispatch
+    </button>
+    <button class="dt-btn" onclick="switchTab('reports',this)">
+      <i class="fas fa-chart-bar" style="margin-right:6px;"></i>Reports
+    </button>
+    <button class="dt-btn" onclick="switchTab('contacts',this)">
+      <i class="fas fa-address-book" style="margin-right:6px;"></i>Contacts
+    </button>
+  </div>
+
+  <div class="content">
+
+    <div class="pane active" id="pane-dispatch">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fas fa-paper-plane" style="margin-right:8px;"></i>New Dispatch Entry</h3>
+          <p>Fill details below — dispatch number is assigned automatically</p>
+        </div>
+        <div class="card-body">
+
+          <div class="sec">Dispatch Details</div>
+
+          <div class="dispatch-badge mb-3">
+            <div class="dn-label">Dispatch No. <span class="dn-pulse"></span></div>
+            <div class="dn-num" id="dispatchNo">—</div>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="lbl">Date <span style="color:red;">*</span></label>
+              <input type="date" id="reportDate" name="reportDate" class="inp" required>
+            </div>
+            <div class="col-6">
+              <label class="lbl">Category / Nature <span style="color:red;">*</span></label>
+              <input type="text" id="fCategory" name="category" class="inp" placeholder="e.g. Complaint, Transfer, Inquiry" required>
+            </div>
+          </div>
+
+          <div class="mt-2">
+            <label class="lbl">Send To (Office) <span style="color:red;">*</span></label>
+            <div id="officeCheckboxContainer" style="max-height:200px; overflow-y:auto; border:1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--surface);">
+              </div>
+            <div id="otherOfficeWrap" style="display:none; margin-top:6px;">
+              <label class="lbl">Specify Other Office Name</label>
+              <input type="text" id="otherOfficeName" name="otherOfficeName" class="inp" placeholder="Enter office name">
+            </div>
+            <div class="email-notice" id="emailNotice" style="margin-top:8px;">
+              <i class="fas fa-envelope-circle-check"></i>
+              <span>Email(s) will be sent to: <strong id="emailTarget">—</strong></span>
+            </div>
+            <div class="no-email-notice" id="noEmailNotice" style="margin-top:8px;">
+              <i class="fas fa-exclamation-triangle"></i>
+              <span>No email on file for one or more selected offices. Emails will be skipped for those.</span>
+            </div>
+          </div>
+
+          <div class="sec">School Information</div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="lbl">School Type <span style="color:red;">*</span></label>
+              <select id="schoolType" name="schoolType" class="inp" onchange="schoolTypeChanged()" required>
+                <option value="">-- Select --</option>
+              </select>
+            </div>
+            <div class="col-6" id="emisWrap" style="display:none;">
+              <label class="lbl">EMIS Code (8 digits)</label>
+              <input type="text" id="emisCode" name="emisCode" class="inp" maxlength="8"
+                     pattern="\d{8}" placeholder="00000000"
+                     oninput="this.value=this.value.replace(/\D/g,'');fetchSchoolByEMIS()">
+              <div id="emisResult" class="emis-result" style="display:none;"></div>
+            </div>
+            <div class="col-12" id="schoolNameWrap" style="display:none;">
+              <label class="lbl">School Name</label>
+              <input type="text" id="schoolName" name="schoolName" class="inp" placeholder="Enter school name">
+            </div>
+          </div>
+
+          <div class="mt-2">
+            <label class="lbl">Accused / Concerned Person</label>
+            <input type="text" id="fAccused" name="accusedName" class="inp" placeholder="Full name (if applicable)">
+          </div>
+
+          <div class="mt-2">
+            <label class="lbl">Description / Subject <span style="color:red;">*</span></label>
+            <textarea id="fDescription" name="description" class="inp" rows="4" required
+                      placeholder="Write full details of this dispatch..."></textarea>
+          </div>
+
+          <div class="mt-2">
+            <label class="lbl">Remarks</label>
+            <input type="text" id="fRemarks" name="remarks" class="inp" placeholder="Optional remarks...">
+          </div>
+
+          <div class="sec">File Attachment</div>
+          <div class="file-zone" id="fileZone">
+            <input type="file" id="fileInput" accept="image/*,.pdf,.doc,.docx,.xlsx,.xls"
+                   onchange="handleFileSelect(this)">
+            <div class="file-zone-icon"><i class="fas fa-cloud-arrow-up"></i></div>
+            <div class="file-zone-text"><strong>Tap to upload</strong> or drag &amp; drop<br>PDF, Images, Word, Excel</div>
+            <div class="file-selected" id="fileSelected"></div>
+          </div>
+
+          <button type="button" id="submitBtn" class="btn-primary-custom mt-3" onclick="submitDispatch()">
+            <i class="fas fa-paper-plane" style="margin-right:8px;"></i>SUBMIT &amp; SEND DISPATCH
+          </button>
+
+          <div id="formMsg" style="margin-top:10px;text-align:center;font-size:.84rem;color:var(--sub);min-height:20px;"></div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-reports">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fas fa-chart-bar" style="margin-right:8px;"></i>Dispatch Reports</h3>
+          <p>Search, filter and manage your dispatch records</p>
+        </div>
+        <div class="card-body">
+
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="lbl">From Date</label>
+              <input type="date" id="fromDate" class="inp">
+            </div>
+            <div class="col-6">
+              <label class="lbl">To Date</label>
+              <input type="date" id="toDate" class="inp">
+            </div>
+            <div class="col-6">
+              <label class="lbl">Office</label>
+              <select id="filterOffice" class="inp">
+                <option value="">All Offices</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="lbl">Keyword</label>
+              <input type="text" id="filterKeyword" class="inp" placeholder="Search..."
+                     onkeydown="if(event.key==='Enter')loadReports()">
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
+            <button class="btn btn-pr" onclick="loadReports()"><i class="fas fa-search"></i> Search</button>
+            <button id="btnShowDel" class="btn btn-red" onclick="toggleDeleted(true)">
+              <i class="fas fa-trash-restore"></i> Deleted
+            </button>
+            <button id="btnHideDel" class="btn btn-out" style="display:none;" onclick="toggleDeleted(false)">
+              <i class="fas fa-times"></i> Hide
+            </button>
+          </div>
+
+          <div id="deletedSection" style="display:none;margin-bottom:20px;"></div>
+          <div id="reportSection"><div class="alert a-info">Use filters above and click Search to load records.</div></div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-contacts">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fas fa-address-book" style="margin-right:8px;"></i>Office Contacts</h3>
+          <p>Manage contacts for automatic email dispatch</p>
+        </div>
+        <div class="card-body">
+
+          <button class="btn btn-ok mb-3" onclick="openContactModal('add')">
+            <i class="fas fa-plus"></i> Add New Contact
+          </button>
+
+          <div id="contactsGrid" style="margin-top:8px;"></div>
+
+        </div>
+      </div>
+    </div>
+
+  </div><div class="bottom-nav">
+    <button class="bn-btn active" id="bn-dispatch" onclick="switchTab('dispatch',this)">
+      <i class="fas fa-paper-plane"></i>Dispatch
+    </button>
+    <button class="bn-btn" id="bn-reports" onclick="switchTab('reports',this)">
+      <i class="fas fa-chart-bar"></i>Reports
+    </button>
+    <button class="bn-btn" id="bn-contacts" onclick="switchTab('contacts',this)">
+      <i class="fas fa-address-book"></i>Contacts
+    </button>
+  </div>
+
+</div><div class="modal-overlay" id="contactModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h4 id="contactModalTitle">Add Contact</h4>
+      <button class="modal-close" onclick="closeModal('contactModal')"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cMode" value="add">
+      <input type="hidden" id="cOldName" value="">
+      <div class="row g-2">
+        <div class="col-12">
+           <label class="lbl">Office Name <span style="color:red;">*</span></label>
+          <input type="text" id="cName" class="inp" placeholder="e.g. DEO Office Multan">
+        </div>
+        <div class="col-12">
+          <label class="lbl">Officer Name</label>
+          <input type="text" id="cOfficer" class="inp" placeholder="Officer's full name">
+        </div>
+        <div class="col-12">
+          <label class="lbl">Office Email</label>
+          <input type="email" id="cEmailOffice" class="inp" placeholder="office@example.com">
+        </div>
+        <div class="col-12">
+          <label class="lbl">Personal Email</label>
+          <input type="email" id="cEmailPersonal" class="inp" placeholder="personal@gmail.com">
+        </div>
+        <div class="col-12">
+          <label class="lbl">Cell Number</label>
+          <input type="tel" id="cCell" class="inp" placeholder="+92 300 0000000">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button id="delContactBtn" class="btn btn-red" style="display:none;margin-right:auto;" onclick="removeContact()">
+        <i class="fas fa-trash"></i> Delete
+      </button>
+      <button class="btn btn-out" onclick="closeModal('contactModal')">Cancel</button>
+      <button class="btn btn-pr" onclick="submitContact()"><i class="fas fa-save"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="detailModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h4>Dispatch Details</h4>
+      <button class="modal-close" onclick="closeModal('detailModal')"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="modal-foot">
+      <button class="btn btn-out" onclick="closeModal('detailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   API ROUTER WRAPPER (GITHUB PAGES POLYFILL)
+   This intercepts all google.script.run calls and pushes
+   them through the Google Apps Script Web App Endpoint.
+═══════════════════════════════════════════════════ */
+
+// ★★★ PASTE YOUR NEW GOOGLE APPS SCRIPT WEB APP URL HERE ★★★
+const WEB_APP_URL = "YOUR_WEB_APP_URL_HERE";
+
+const google = { script: {} };
+
+Object.defineProperty(google.script, 'run', {
+  get: function() {
+    // Return a fresh runner object for every call to prevent callback collisions
+    const runner = {
+      _sh: null,
+      _fh: null,
+      withSuccessHandler: function(cb) { this._sh = cb; return this; },
+      withFailureHandler: function(cb) { this._fh = cb; return this; }
+    };
+
+    // List of all backend functions defined in your Code.gs router
+    const backendFunctions = [
+      'checkUserSetup', 'initializeUserSystem', 'getAdminConfig',
+      'getDashboardStats', 'getAllContacts', 'getNextDispatchNo',
+      'getEmailsForOffices', 'getSchoolNameByEMIS', 'processForm',
+      'getFilteredReports', 'getFileForDownload', 'deleteDispatchRecord',
+      'getDeletedReports', 'restoreDispatchRecord', 'getContactDetails',
+      'saveContact', 'deleteContact'
+    ];
+
+    backendFunctions.forEach(function(action) {
+      runner[action] = function() {
+        const args = Array.prototype.slice.call(arguments);
+        const sh = this._sh;
+        const fh = this._fh;
+
+        fetch(WEB_APP_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: action, args: args }),
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+          if (res.success && sh) {
+            sh(res.data);
+          } else if (!res.success && fh) {
+            fh(res.error || "Unknown Error");
+          }
+        })
+        .catch(function(err) {
+          console.error("Fetch API Error:", err);
+          if (fh) fh("Network or Authentication Error. Ensure third-party cookies are allowed for Google.");
+        });
+      };
+    });
+
+    return runner;
+  }
+});
+
+/* ═══════════════════════════════════════════════════
+   GLOBAL CONFIG STORE
+═══════════════════════════════════════════════════ */
+var _adminConfig = {
+  org_name                : 'Dispatch Register',
+  department_name         : 'Punjab School Education Department',
+  school_types            : 'Govt,Private,Pef,Peima,Literacy,PSRP,Other if not listed above',
+  placeholder_category    : 'e.g. Complaint, Transfer, Inquiry',
+  placeholder_accused     : 'Full name (if applicable)',
+  placeholder_description : 'Write full details of this dispatch...',
+  placeholder_remarks     : 'Optional remarks...',
+  placeholder_other_office: 'Enter office name',
+  dispatch_footer_text    : 'Kindly take necessary action.'
+};
+
+/* ═══════════════════════════════════════════════════
+   SETUP FLOW
+═══════════════════════════════════════════════════ */
+
+window.onload = function () {
+  showState('s-checking');
+  google.script.run
+    .withSuccessHandler(onSetupResult)
+    .withFailureHandler(function () {
+      document.getElementById('userEmailDisplay').textContent = 'your account';
+      showState('s-allow');
+    })
+    .checkUserSetup();
+};
+
+function onSetupResult(r) {
+  if (r.status === 'READY')        { bootApp(r.email); return; }
+  if (r.status === 'SHEET_DELETED'){ showState('s-deleted'); return; }
+  document.getElementById('userEmailDisplay').textContent = r.email || 'your account';
+  showState('s-allow');
+}
+
+function runInitSetup() {
+  var isAllow = document.getElementById('s-allow').style.display !== 'none';
+  var progId  = isAllow ? 'allowProgress' : 'recreateProgress';
+  var btn     = document.getElementById(isAllow ? 'allowBtn' : 'recreateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin-ring"></span> Setting up your workspace...';
+  document.getElementById(progId).textContent = 'Creating spreadsheet and Drive folder...';
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (r.success) {
+        showState('s-done');
+        var em = document.getElementById('userEmailDisplay').textContent;
+        setTimeout(function () { bootApp(em); }, 1600);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-redo" style="margin-right:8px;"></i>Retry';
+        document.getElementById(progId).textContent = 'Error: ' + r.error;
+      }
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-redo" style="margin-right:8px;"></i>Retry';
+      document.getElementById(progId).textContent = 'Error: ' + (err.message || err);
+    })
+    .initializeUserSystem();
+}
+
+function showState(id) {
+  ['s-checking','s-allow','s-deleted','s-done'].forEach(function(s) {
+    document.getElementById(s).style.display = s === id ? '' : 'none';
+  });
+}
+
+function bootApp(email) {
+  document.getElementById('setupOverlay').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+  if (email) {
+    document.getElementById('userEmailTop').textContent = email;
+    document.getElementById('userInitial').textContent  = email.charAt(0).toUpperCase();
+  }
+  document.getElementById('reportDate').valueAsDate = new Date();
+  loadAdminConfig(function() {
+    loadMasterData();
+    loadStats();
+    fetchDispatchNo();
+    startAutoRefresh();
+  });
+  document.getElementById('reportDate').addEventListener('change', fetchDispatchNo);
+
+  // Drag & drop file zone
+  var zone = document.getElementById('fileZone');
+  zone.addEventListener('dragover',  function(e){ e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', function()  { zone.classList.remove('drag-over'); });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    var f = e.dataTransfer.files[0];
+    if (f) { document.getElementById('fileInput').files = e.dataTransfer.files; handleFileSelect({files:[f]}); }
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   ADMIN CONFIG
+═══════════════════════════════════════════════════ */
+function loadAdminConfig(callback) {
+  google.script.run
+    .withSuccessHandler(function(cfg) {
+      _adminConfig = cfg;
+
+      var orgName  = cfg.org_name        || 'Dispatch Register';
+      var deptName = cfg.department_name || 'Punjab School Education Department';
+
+      var tbOrg  = document.getElementById('tbOrgName');
+      var tbDept = document.getElementById('tbDeptName');
+      if (tbOrg)  tbOrg.textContent  = orgName;
+      if (tbDept) tbDept.textContent = deptName;
+
+      var setupTitle = document.getElementById('setupOrgTitle');
+      var setupText  = document.getElementById('setupCheckingText');
+      if (setupTitle) setupTitle.textContent = orgName;
+      if (setupText)  setupText.innerHTML    = deptName + '<br><span class="spin-ring"></span> Verifying your account...';
+      
+      var schoolTypeEl = document.getElementById('schoolType');
+      if (schoolTypeEl && cfg.school_types) {
+        var types = cfg.school_types.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+        schoolTypeEl.innerHTML = '<option value="">-- Select --</option>';
+        types.forEach(function(t) {
+          var opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          schoolTypeEl.appendChild(opt);
+        });
+      }
+
+      var fCategory    = document.getElementById('fCategory');
+      var fAccused     = document.getElementById('fAccused');
+      var fDescription = document.getElementById('fDescription');
+      var fRemarks     = document.getElementById('fRemarks');
+      var fOtherOffice = document.getElementById('otherOfficeName');
+
+      if (fCategory    && cfg.placeholder_category)     fCategory.placeholder    = cfg.placeholder_category;
+      if (fAccused     && cfg.placeholder_accused)      fAccused.placeholder     = cfg.placeholder_accused;
+      if (fDescription && cfg.placeholder_description)  fDescription.placeholder = cfg.placeholder_description;
+      if (fRemarks     && cfg.placeholder_remarks)      fRemarks.placeholder     = cfg.placeholder_remarks;
+      if (fOtherOffice && cfg.placeholder_other_office) fOtherOffice.placeholder = cfg.placeholder_other_office;
+
+      if (typeof callback === 'function') callback();
+    })
+    .withFailureHandler(function(e) {
+      console.warn('loadAdminConfig failed:', e);
+      if (typeof callback === 'function') callback();
+    })
+    .getAdminConfig();
+}
+
+/* ═══════════════════════════════════════════════════
+   TAB SWITCHING
+═══════════════════════════════════════════════════ */
+function switchTab(name, btn) {
+  document.querySelectorAll('.pane').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.dt-btn,.bn-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('pane-' + name).classList.add('active');
+  document.querySelectorAll('[onclick*="switchTab(\'' + name + '\'"]').forEach(function(b){ b.classList.add('active'); });
+
+  if (name === 'dispatch') {
+    startAutoRefresh();
+  } else {
+    stopAutoRefresh();
+    if (name === 'contacts') loadMasterData();
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   STATS
+═══════════════════════════════════════════════════ */
+function loadStats() {
+  google.script.run
+    .withSuccessHandler(function(s) {
+      document.getElementById('st-total').textContent   = s.total;
+      document.getElementById('st-month').textContent   = s.thisMonth;
+      document.getElementById('st-offices').textContent = s.offices;
+      document.getElementById('st-deleted').textContent = s.deleted;
+    })
+    .withFailureHandler(function(){})
+    .getDashboardStats();
+}
+
+/* ═══════════════════════════════════════════════════
+   MASTER DATA (contacts → checkboxes + filter dropdown)
+═══════════════════════════════════════════════════ */
+var _allContacts = [];
+function loadMasterData() {
+  google.script.run
+    .withSuccessHandler(function(contacts) {
+      _allContacts = contacts;
+      _fillOfficeCheckboxes(contacts);      // for dispatch tab
+      _fillFilterOfficeDropdown(contacts);  // for reports filter
+      _renderContactsGrid(contacts);
+    })
+    .withFailureHandler(function(e){ console.warn('loadMasterData:', e); })
+    .getAllContacts();
+}
+
+function _fillOfficeCheckboxes(contacts) {
+  var container = document.getElementById('officeCheckboxContainer');
+  container.innerHTML = '';
+  contacts.forEach(function(c) {
+    var id = 'officeChk_' + c.officeName.replace(/\s+/g, '_');
+    var div = document.createElement('div');
+    div.className = 'form-check';
+    div.innerHTML =
+      '<input class="form-check-input office-chk" type="checkbox" value="' + esc(c.officeName) + '" id="' + id + '" onchange="officeSelectionChanged()">' +
+      '<label class="form-check-label" for="' + id + '" style="font-size:.82rem;">' + esc(c.officeName) + '</label>';
+    container.appendChild(div);
+  });
+  
+  // Special "Other Office..." checkbox
+  var otherDiv = document.createElement('div');
+  otherDiv.className = 'form-check';
+  otherDiv.innerHTML =
+    '<input class="form-check-input" type="checkbox" id="officeChk_Other" value="Other" onchange="otherOfficeToggle()">' +
+    '<label class="form-check-label" for="officeChk_Other" style="font-weight:600; font-size:.82rem;">Other Office...</label>';
+  container.appendChild(otherDiv);
+}
+
+function _fillFilterOfficeDropdown(contacts) {
+  var el = document.getElementById('filterOffice');
+  el.innerHTML = '<option value="">All Offices</option>';
+  contacts.forEach(function(c) {
+    if (c.officeName) el.add(new Option(c.officeName, c.officeName));
+  });
+  el.add(new Option('Other', 'Other'));
+}
+
+/* ═══════════════════════════════════════════════════
+   DISPATCH NUMBER AUTO-REFRESH
+═══════════════════════════════════════════════════ */
+var _refreshTimer = null;
+
+function fetchDispatchNo() {
+  var d = document.getElementById('reportDate').value;
+  if (!d) return;
+  var year = new Date(d + 'T00:00:00').getFullYear();
+  google.script.run
+    .withSuccessHandler(function(n) {
+      document.getElementById('dispatchNo').textContent = n;
+    })
+    .withFailureHandler(function(){})
+    .getNextDispatchNo(year);
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  fetchDispatchNo();
+  _refreshTimer = setInterval(fetchDispatchNo, 2000);
+}
+function stopAutoRefresh() {
+  if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+}
+
+/* ═══════════════════════════════════════════════════
+   DISPATCH FORM – OFFICE CHECKBOX LOGIC
+═══════════════════════════════════════════════════ */
+function getSelectedOffices() {
+  var checks = document.querySelectorAll('#officeCheckboxContainer .office-chk:checked');
+  var offices = [];
+  checks.forEach(function(cb) { offices.push(cb.value); });
+  return offices;
+}
+
+function otherOfficeToggle() {
+  var otherChk = document.getElementById('officeChk_Other');
+  var wrap = document.getElementById('otherOfficeWrap');
+  wrap.style.display = otherChk.checked ? '' : 'none';
+  if (!otherChk.checked) {
+    document.getElementById('otherOfficeName').value = '';
+  }
+  officeSelectionChanged();
+}
+
+function officeSelectionChanged() {
+  var selected = getSelectedOffices();
+  updateEmailNotices(selected);
+}
+
+function updateEmailNotices(selectedOffices) {
+  var emailNotice    = document.getElementById('emailNotice');
+  var noEmailNotice  = document.getElementById('noEmailNotice');
+  var emailTargetEl  = document.getElementById('emailTarget');
+
+  if (selectedOffices.length === 0) {
+    emailNotice.style.display   = 'none';
+    noEmailNotice.style.display = 'none';
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(emails) {
+      var validEmails = emails.filter(function(e) { return e && e.trim(); });
+      if (validEmails.length === 0) {
+        emailNotice.style.display   = 'none';
+        noEmailNotice.style.display = 'flex';
+      } else {
+        emailTargetEl.textContent = validEmails.join(', ');
+        emailNotice.style.display   = 'flex';
+        if (validEmails.length < selectedOffices.length) {
+          noEmailNotice.style.display = 'flex';
+        } else {
+          noEmailNotice.style.display = 'none';
+        }
+      }
+    })
+    .withFailureHandler(function() {
+      emailNotice.style.display   = 'none';
+      noEmailNotice.style.display = 'none';
+    })
+    .getEmailsForOffices(selectedOffices);
+}
+
+/* ═══════════════════════════════════════════════════
+   SCHOOL INFO
+═══════════════════════════════════════════════════ */
+function _getEmisType() {
+  return (_adminConfig && _adminConfig.emis_school_type)
+    ? _adminConfig.emis_school_type.trim() : 'Govt';
+}
+
+function schoolTypeChanged() {
+  var t        = document.getElementById('schoolType').value;
+  var emisType = _getEmisType();
+  document.getElementById('emisWrap').style.display       = (t === emisType) ? '' : 'none';
+  document.getElementById('schoolNameWrap').style.display = (t && t !== emisType) ? '' : 'none';
+  document.getElementById('emisCode').required            = (t === emisType);
+  document.getElementById('schoolName').required          = (t !== '' && t !== emisType);
+}
+
+function fetchSchoolByEMIS() {
+  var v  = document.getElementById('emisCode').value.trim();
+  var el = document.getElementById('emisResult');
+  if (v.length === 8) {
+    el.style.display = '';
+    el.className = 'emis-result';
+    el.textContent = 'Searching...';
+    google.script.run
+      .withSuccessHandler(function(name) {
+        if (name) {
+          el.textContent = '✔ ' + name;
+          el.className = 'emis-result emis-ok';
+          document.getElementById('schoolName') && (document.getElementById('schoolName').value = name);
+        } else {
+          el.textContent = '✘ School not found for this EMIS code';
+          el.className = 'emis-result emis-err';
+        }
+      })
+      .getSchoolNameByEMIS(v);
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   FILE HANDLING
+═══════════════════════════════════════════════════ */
+var _pendingFile = null;
+function handleFileSelect(input) {
+  var f  = input.files ? input.files[0] : null;
+  var el = document.getElementById('fileSelected');
+  if (f) {
+    _pendingFile = f;
+    el.textContent = '📎 ' + f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)';
+    el.style.display = 'block';
+  } else {
+    _pendingFile = null;
+    el.style.display = 'none';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   SUBMIT DISPATCH (supports multiple offices)
+═══════════════════════════════════════════════════ */
+function submitDispatch() {
+  var t        = document.getElementById('schoolType').value;
+  var emisType = _getEmisType();
+  var emis     = document.getElementById('emisCode').value.trim();
+  var sname    = document.getElementById('schoolNameWrap').style.display !== 'none'
+                 ? document.getElementById('schoolName').value.trim() : '';
+
+  var selectedOffices = getSelectedOffices();
+  var otherChecked = document.getElementById('officeChk_Other').checked;
+  
+  // Validation
+  if (!document.getElementById('reportDate').value)          { showToast('Please select a date.', true); return; }
+  if (!document.getElementById('fCategory').value.trim())    { showToast('Category is required.', true); return; }
+  if (selectedOffices.length === 0 && !otherChecked)         { showToast('Please select at least one office.', true); return; }
+  if (otherChecked && !document.getElementById('otherOfficeName').value.trim()) { showToast('Please enter the other office name.', true); return; }
+  if (!t)                                                    { showToast('Please select school type.', true); return; }
+  if (t === emisType && emis.length !== 8)                   { showToast('Enter a valid 8-digit EMIS code.', true); return; }
+  if (t && t !== emisType && !sname)                         { showToast('Please enter the school name.', true); return; }
+  if (!document.getElementById('fDescription').value.trim()) { showToast('Description is required.', true); return; }
+
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  document.getElementById('formMsg').innerHTML = '<span class="spin-sm"></span> Saving and sending...';
+
+  function doSubmit(base64Data, fileName, fileMime) {
+    var formData = {
+      dispatchNo     : document.getElementById('dispatchNo').textContent,
+      reportDate     : document.getElementById('reportDate').value,
+      category       : document.getElementById('fCategory').value.trim(),
+      selectedOffices: selectedOffices,
+      otherOfficeName: document.getElementById('otherOfficeName').value.trim(),
+      schoolType     : t,
+      emisCode       : emis,
+      schoolName     : document.getElementById('schoolNameWrap').style.display !== 'none'
+                       ? document.getElementById('schoolName').value.trim() : '',
+      accusedName    : document.getElementById('fAccused').value.trim(),
+      description    : document.getElementById('fDescription').value.trim(),
+      remarks        : document.getElementById('fRemarks').value.trim(),
+      fileBase64     : base64Data || '',
+      fileName       : fileName   || '',
+      fileMime       : fileMime   || ''
+    };
+
+    google.script.run
+      .withSuccessHandler(function(r) {
+        btn.disabled = false;
+        document.getElementById('formMsg').innerHTML = '';
+        if (r.success) {
+          showToast(r.message || 'Dispatch saved!');
+          _resetDispatchForm();
+          loadStats();
+        } else {
+          showToast('Error: ' + r.error, true);
+        }
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        document.getElementById('formMsg').innerHTML = '';
+        showToast('Error: ' + (err.message || err), true);
+      })
+      .processForm(formData);
+  }
+
+  // The base64 encoding logic maps perfectly to the REST payload automatically
+  if (_pendingFile) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var parts  = e.target.result.split(',');
+      var base64 = parts[1];
+      doSubmit(base64, _pendingFile.name, _pendingFile.type);
+    };
+    reader.onerror = function() {
+      showToast('Could not read file. Saving without attachment.', true);
+      doSubmit('', '', '');
+    };
+    reader.readAsDataURL(_pendingFile);
+  } else {
+    doSubmit('', '', '');
+  }
+}
+
+function _resetDispatchForm() {
+  document.getElementById('fCategory').value       = '';
+  document.getElementById('otherOfficeName').value = '';
+  document.getElementById('schoolType').value      = '';
+  document.getElementById('emisCode').value        = '';
+  document.getElementById('schoolName').value      = '';
+  document.getElementById('fAccused').value        = '';
+  document.getElementById('fDescription').value    = '';
+  document.getElementById('fRemarks').value        = '';
+  document.getElementById('fileInput').value       = '';
+
+  // Uncheck all office checkboxes
+  var checks = document.querySelectorAll('#officeCheckboxContainer input[type=checkbox]');
+  checks.forEach(function(cb) { cb.checked = false; });
+  document.getElementById('otherOfficeWrap').style.display = 'none';
+
+  _pendingFile = null;
+  document.getElementById('fileSelected').style.display      = 'none';
+  document.getElementById('emailNotice').style.display        = 'none';
+  document.getElementById('noEmailNotice').style.display      = 'none';
+  document.getElementById('emisWrap').style.display           = 'none';
+  document.getElementById('schoolNameWrap').style.display     = 'none';
+  document.getElementById('emisResult').style.display         = 'none';
+  document.getElementById('formMsg').innerHTML                = '';
+  document.getElementById('reportDate').valueAsDate = new Date();
+  fetchDispatchNo();
+}
+
+/* ═══════════════════════════════════════════════════
+   REPORTS
+═══════════════════════════════════════════════════ */
+var _lastReportData = [];
+function loadReports() {
+  var el = document.getElementById('reportSection');
+  el.innerHTML = '<div style="padding:20px;text-align:center;"><span class="spin-sm"></span> Loading...</div>';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      _lastReportData = data;
+      _renderReports(data);
+    })
+    .withFailureHandler(function(e) {
+      el.innerHTML = '<div class="alert a-err">Error: ' + e + '</div>';
+    })
+    .getFilteredReports({
+      fromDate : document.getElementById('fromDate').value,
+      toDate   : document.getElementById('toDate').value,
+      office   : document.getElementById('filterOffice').value,
+      keyword  : document.getElementById('filterKeyword').value.trim()
+    });
+}
+
+function _renderReports(data) {
+  var el = document.getElementById('reportSection');
+  if (!data || !data.length) {
+    el.innerHTML = '<div class="alert a-info">No records found for these filters.</div>';
+    return;
+  }
+
+  var h = '<div style="font-size:.8rem;color:var(--sub);margin-bottom:8px;">' + data.length + ' record(s) found</div>' +
+    '<div style="overflow-x:auto;"><table class="dtable"><thead><tr>' +
+    '<th>#</th><th>Date</th><th>Dispatch</th><th>Office</th><th>Category</th><th>Actions</th>' +
+    '</tr></thead><tbody>';
+  data.forEach(function(r) {
+    h += '<tr>' +
+      '<td style="color:var(--sub);">' + (r.srNo||'') + '</td>' +
+      '<td style="white-space:nowrap;">' + (r.reportDate||'') + '</td>' +
+      '<td><strong style="color:var(--navy2);font-family:\'JetBrains Mono\',monospace;">' + esc(r.dispatchNo) + '</strong></td>' +
+      '<td style="max-width:120px;">' + esc(r.selectOffice) + '</td>' +
+      '<td style="max-width:100px;">' + esc(r.category) + '</td>' +
+      '<td style="white-space:nowrap;">' +
+      '<button class="act-btn ab-view" onclick="viewDetail(' + r.rowNum + ')" title="View"><i class="fas fa-eye"></i></button>' +
+      (r.hasFile ? '<button class="act-btn ab-dl" onclick="dlFile(' + r.rowNum + ')" title="Download"><i class="fas fa-download"></i></button>' : '') +
+      '<button class="act-btn ab-del" onclick="delReport(' + r.rowNum + ')" title="Delete"><i class="fas fa-trash"></i></button>' +
+      '</td></tr>';
+  });
+  el.innerHTML = h + '</tbody></table></div>';
+}
+
+function viewDetail(rowNum) {
+  var rec = _lastReportData.find(function(r){ return r.rowNum === rowNum; });
+  if (!rec) return;
+  var b = document.getElementById('detailBody');
+  b.innerHTML = [
+    ['Sr. No.',       rec.srNo],
+    ['Date',          rec.reportDate],
+    ['Dispatch No.',  rec.dispatchNo],
+    ['Office',        rec.selectOffice],
+    ['Category',      rec.category],
+    ['School Type',   rec.schoolType],
+    ['School Name',   rec.schoolName],
+    ['EMIS Code',     rec.emisCode],
+    ['Accused',       rec.accusedName],
+    ['Description',   rec.description],
+    ['Remarks',       rec.remarks]
+  ].map(function(pair){
+    return pair[1]
+      ? '<div class="detail-row"><span class="detail-label">' + pair[0] + '</span><span class="detail-val">' + esc(pair[1]) + '</span></div>'
+      : '';
+  }).join('');
+  openModal('detailModal');
+}
+
+function dlFile(rowNum) {
+  showToast('Preparing download...');
+  google.script.run
+    .withSuccessHandler(function(r) {
+      var bytes = atob(r.base64);
+      var ab = new ArrayBuffer(bytes.length);
+      var ia = new Uint8Array(ab);
+      for (var i = 0; i < bytes.length; i++) ia[i] = bytes.charCodeAt(i);
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([ab], { type: r.mimeType }));
+      a.download = r.fileName; a.click();
+    })
+    .withFailureHandler(function(e){ showToast('Download failed: ' + e, true); })
+    .getFileForDownload(rowNum);
+}
+
+function delReport(rowNum) {
+  if (!confirm('Move this record to trash?')) return;
+  google.script.run
+    .withSuccessHandler(function(msg){ showToast(msg); loadReports(); loadStats(); })
+    .withFailureHandler(function(e){ showToast('Error: ' + e, true); })
+    .deleteDispatchRecord(rowNum);
+}
+
+function toggleDeleted(show) {
+  document.getElementById('btnShowDel').style.display = show ? 'none' : '';
+  document.getElementById('btnHideDel').style.display = show ? '' : 'none';
+  var el = document.getElementById('deletedSection');
+  if (!show) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<span class="spin-sm"></span> Loading deleted records...';
+  google.script.run
+    .withSuccessHandler(_renderDeleted)
+    .withFailureHandler(function(e){ el.innerHTML = '<div class="alert a-err">Error: '+e+'</div>'; })
+    .getDeletedReports();
+}
+
+function _renderDeleted(data) {
+  var el = document.getElementById('deletedSection');
+  if (!data || !data.length) { el.innerHTML = '<div class="alert">No deleted records.</div>'; return; }
+  var h = '<h6 style="color:var(--red2);font-weight:800;margin-bottom:8px;"><i class="fas fa-trash" style="margin-right:6px;"></i>Deleted Records</h6>' +
+    '<div style="overflow-x:auto;"><table class="dtable"><thead>' +
+    '<tr style=""><th style="background:var(--red2);">Date</th><th style="background:var(--red2);">Dispatch</th>' +
+    '<th style="background:var(--red2);">Office</th><th style="background:var(--red2);">Deleted On</th>' +
+    '<th style="background:var(--red2);">Action</th></tr></thead><tbody>';
+  data.forEach(function(r){
+    h += '<tr><td>'+(r.reportDate||'')+'</td><td>'+esc(r.dispatchNo)+'</td><td>'+esc(r.selectOffice)+'</td>' +
+         '<td>'+(r.deletedDate||'')+'</td>' +
+         '<td><button class="act-btn ab-rest" onclick="restoreRec('+r.rowNum+')">↩ Restore</button></td></tr>';
+  });
+  el.innerHTML = h + '</tbody></table></div>';
+}
+
+function restoreRec(rowNum) {
+  if (!confirm('Restore this record?')) return;
+  google.script.run
+    .withSuccessHandler(function(msg){ showToast(msg); toggleDeleted(true); loadStats(); })
+    .withFailureHandler(function(e){ showToast('Error: '+e, true); })
+    .restoreDispatchRecord(rowNum);
+}
+
+/* ═══════════════════════════════════════════════════
+   CONTACTS
+═══════════════════════════════════════════════════ */
+function _renderContactsGrid(contacts) {
+  var el = document.getElementById('contactsGrid');
+  if (!contacts || !contacts.length) {
+    el.innerHTML = '<p style="color:var(--sub);font-size:.88rem;">No contacts yet. Add your first contact above.</p>';
+    return;
+  }
+  var h = '';
+  contacts.forEach(function(c) {
+    var emails = [c.emailOffice, c.emailPersonal].filter(Boolean).join(', ');
+    var safe   = c.officeName.replace(/'/g,"\\'");
+    h += '<div class="contact-card" onclick="openContactModal(\'edit\',\'' + safe + '\')">' +
+      '<div class="cc-name">' + esc(c.officeName) + '</div>' +
+      (c.officerName ? '<div class="cc-officer"><i class="fas fa-user" style="margin-right:4px;color:var(--sub);"></i>' + esc(c.officerName) + '</div>' : '') +
+      (emails ? '<div class="cc-email"><i class="fas fa-envelope" style="margin-right:4px;"></i>' + esc(emails) + '</div>' : '') +
+      (c.cellNo ? '<div style="font-size:.78rem;color:var(--sub);margin-top:2px;"><i class="fas fa-phone" style="margin-right:4px;"></i>' + esc(c.cellNo) + '</div>' : '') +
+      '</div>';
+  });
+  el.innerHTML = h;
+}
+
+function openContactModal(mode, officeName) {
+  document.getElementById('cMode').value    = mode;
+  document.getElementById('cOldName').value = '';
+  document.getElementById('cName').value = '';
+  document.getElementById('cOfficer').value = '';
+  document.getElementById('cEmailOffice').value = '';
+  document.getElementById('cEmailPersonal').value = '';
+  document.getElementById('cCell').value = '';
+  document.getElementById('delContactBtn').style.display = 'none';
+  document.getElementById('contactModalTitle').textContent = mode === 'add' ? 'Add Contact' : 'Edit Contact';
+
+  if (mode === 'edit' && officeName) {
+    google.script.run
+      .withSuccessHandler(function(c) {
+        if (!c) { showToast('Contact not found.', true); return; }
+        document.getElementById('cMode').value           = 'edit';
+        document.getElementById('cOldName').value        = c.officeName;
+        document.getElementById('cName').value           = c.officeName;
+        document.getElementById('cOfficer').value        = c.officerName || '';
+        document.getElementById('cEmailOffice').value    = c.emailOffice || '';
+        document.getElementById('cEmailPersonal').value  = c.emailPersonal || '';
+        document.getElementById('cCell').value           = c.cellNo || '';
+        document.getElementById('delContactBtn').style.display = '';
+      })
+      .withFailureHandler(function(e){ showToast('Error: '+e,true); })
+      .getContactDetails(officeName);
+  }
+  openModal('contactModal');
+}
+
+function submitContact() {
+  var name = document.getElementById('cName').value.trim();
+  if (!name) { showToast('Office Name is required.', true); return; }
+  var mode = document.getElementById('cMode').value;
+  var data = {
+    officeName    : name,
+    officerName   : document.getElementById('cOfficer').value.trim(),
+    emailOffice   : document.getElementById('cEmailOffice').value.trim(),
+    emailPersonal : document.getElementById('cEmailPersonal').value.trim(),
+    cellNo        : document.getElementById('cCell').value.trim()
+  };
+  if (mode === 'edit') data.originalOfficeName = document.getElementById('cOldName').value;
+
+  google.script.run
+    .withSuccessHandler(function(msg){
+      showToast(msg);
+      closeModal('contactModal');
+      loadMasterData();
+    })
+    .withFailureHandler(function(e){ showToast('Error: '+e, true); })
+    .saveContact(data, mode);
+}
+
+function removeContact() {
+  var name = document.getElementById('cName').value;
+  if (!name || !confirm('Delete contact: ' + name + '?')) return;
+  google.script.run
+    .withSuccessHandler(function(msg){
+      showToast(msg);
+      closeModal('contactModal');
+      loadMasterData();
+    })
+    .withFailureHandler(function(e){ showToast('Error: '+e, true); })
+    .deleteContact(name);
+}
+
+/* ═══════════════════════════════════════════════════
+   MODAL HELPERS
+═══════════════════════════════════════════════════ */
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('open');
+  }
+});
+
+/* ═══════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════ */
+var _toastTimer = null;
+function showToast(msg, isErr) {
+  var t   = document.getElementById('toast');
+  var txt = document.getElementById('toastMsg');
+  txt.textContent = msg;
+  t.className = 'toast show' + (isErr ? ' err' : '');
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { t.className = 'toast'; }, 4000);
+}
+
+/* ═══════════════════════════════════════════════════
+   UTILITY
+═══════════════════════════════════════════════════ */
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+
+</body>
+</html>
