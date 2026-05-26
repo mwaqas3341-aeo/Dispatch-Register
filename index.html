@@ -5,26 +5,132 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dispatch Register Portal</title>
   <style>
-    body, html { 
-      margin: 0; 
-      padding: 0; 
-      height: 100%; 
-      overflow: hidden; 
-      background-color: #eef2f9; 
+    :root {
+      --primary: #003087;
+      --primary-hover: #002266;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
     }
-    iframe { 
-      border: none; 
-      width: 100%; 
-      height: 100%; 
+    
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+      display: flex; justify-content: center; align-items: center;
+    }
+
+    .portal-container {
+      background: var(--card-bg);
+      padding: 45px 40px;
+      border-radius: 16px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      text-align: center;
+      max-width: 440px;
+      width: 90%;
+      transition: transform 0.2s ease;
+    }
+
+    .portal-icon {
+      font-size: 3.5rem;
+      margin-bottom: 15px;
+      display: inline-block;
+    }
+
+    h2 {
+      color: var(--text-main);
+      margin: 0 0 12px 0;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin: 0 0 32px 0;
+    }
+
+    .launch-btn {
+      display: block;
+      width: 100%;
+      background-color: var(--primary);
+      color: white;
+      padding: 15px 24px;
+      text-decoration: none;
+      font-size: 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 48, 135, 0.2);
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .launch-btn:hover {
+      background-color: var(--primary-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(0, 48, 135, 0.3);
+    }
+
+    .launch-btn:active {
+      transform: translateY(1px);
+    }
+
+    .security-badge {
+      margin-top: 28px;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
   </style>
 </head>
 <body>
 
-  <iframe src="https://script.google.com/macros/s/AKfycbw3KlamE-8wGqSpaJ7rMWBi6XOR9Ab1eRtRoUyfdYR7BkoDiwS9qgVtNu-ir8izIbfnaA/exec" 
-          allow="clipboard-write; encrypted-media; picture-in-picture;" 
-          allowfullscreen>
-  </iframe>
+  <div class="portal-container">
+    <div class="portal-icon">📂</div>
+    <h2>Dispatch Register</h2>
+    <p>Access your multi-user dispatch system securely. Launching the workspace in a direct window ensures active Google Drive synchronization and maximum processing speeds.</p>
+    
+    <button onclick="launchSecureApp()" class="launch-btn">Open Secure Workspace</button>
+    
+    <div class="security-badge">
+      🔒 Encrypted Google Workspace Session
+    </div>
+  </div>
+
+  <script>
+    function launchSecureApp() {
+      // Direct deployed App URL 
+      var webAppUrl = "https://script.google.com/macros/s/AKfycbw3KlamE-8wGqSpaJ7rMWBi6XOR9Ab1eRtRoUyfdYR7BkoDiwS9qgVtNu-ir8izIbfnaA/exec";
+      
+      // Target Dimensions
+      var width = 1100;
+      var height = 820;
+      
+      // Center popup alignment calculated per client display resolution
+      var left = (window.screen.width - width) / 2;
+      var top = (window.screen.height - height) / 2;
+      
+      var windowFeatures = "width=" + width + ",height=" + height + ",top=" + top + ",left=" + left + 
+                           ",resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no,location=no";
+      
+      var win = window.open(webAppUrl, "DispatchRegisterPortal", windowFeatures);
+      
+      if (win) {
+        win.focus();
+      } else {
+        // Fallback redirection if the browser stops popups aggressively
+        window.location.href = webAppUrl;
+      }
+    }
+  </script>
 
 </body>
 </html>
