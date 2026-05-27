@@ -1,85 +1,358 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>AEO Dispatch System</title>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; margin: 0; }
-        nav { background: #0056b3; color: white; padding: 1rem; display: flex; gap: 20px; }
-        nav button { background: none; border: none; color: white; cursor: pointer; font-size: 16px; }
-        .card { max-width: 800px; margin: 20px auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .hidden { display: none; }
-        .row { display: flex; gap: 15px; margin-bottom: 15px; }
-        .col { flex: 1; }
-        label { font-weight: 600; display: block; margin-bottom: 5px; }
-        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
-        .checkbox-group { height: 100px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AEO Dispatch System — Punjab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
-<nav>
-    <button onclick="showSection('dashboard')">Dashboard</button>
-    <button onclick="showSection('reports')">Reports</button>
-    <button onclick="showSection('settings')">Settings</button>
-</nav>
+<!-- ═══ LOGIN SCREEN ═══ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-emblem">
+      <div class="emblem-icon">📋</div>
+      <div class="emblem-lines">
+        <div></div><div></div><div></div>
+      </div>
+    </div>
+    <h1>AEO Dispatch System</h1>
+    <p class="login-sub">Government of Punjab · Education Department</p>
+    <button id="google-signin-btn" onclick="signIn()">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.5 30.2 0 24 0 14.8 0 6.9 5.4 3 13.3l7.8 6c1.8-5.4 6.9-9.8 13.2-9.8z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17z"/><path fill="#FBBC05" d="M10.8 28.6A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.1.8-4.6l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.7l8.3-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.7 2.2-7.7 2.2-6.3 0-11.6-4.2-13.5-10l-8.3 6.1C6.8 42.5 14.8 48 24 48z"/></svg>
+      Sign in with Google
+    </button>
+    <p class="login-note">Your data stays in your own Google Drive.<br>Nothing is stored on any external server.</p>
+  </div>
+</div>
 
-<div class="card">
-    <div id="auth-section">
-        <h2>AEO Dispatch System</h2>
-        <button id="auth-btn">Sign in with Google</button>
+<!-- ═══ MAIN APP ═══ -->
+<div id="app" class="hidden">
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">📋</div>
+      <div>
+        <div class="brand-name">AEO Dispatch</div>
+        <div class="brand-dept">Punjab Education</div>
+      </div>
     </div>
 
-    <section id="dashboard" class="hidden">
-        <h2>Dispatch # <span id="dispatch-num-display">Loading...</span></h2>
-        <form id="dispatch-form">
-            <div class="row">
-                <div class="col"><label>Date</label><input type="date" id="date" required></div>
-                <div class="col"><label>Category/Nature</label><input type="text" id="nature" placeholder="e.g., Inspection"></div>
+    <nav class="sidebar-nav">
+      <button class="nav-btn active" data-section="dashboard" onclick="showSection('dashboard')">
+        <span class="nav-icon">🏛</span>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-btn" data-section="reports" onclick="showSection('reports')">
+        <span class="nav-icon">📄</span>
+        <span>Reports</span>
+      </button>
+      <button class="nav-btn" data-section="settings" onclick="showSection('settings')">
+        <span class="nav-icon">⚙</span>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="user-avatar" id="user-avatar">U</div>
+        <div class="user-details">
+          <div class="user-name" id="user-name">Loading…</div>
+          <div class="user-email" id="user-email"></div>
+        </div>
+      </div>
+      <button class="signout-btn" onclick="signOut()">Sign Out</button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main id="main">
+
+    <!-- ─── DASHBOARD ─── -->
+    <section id="dashboard" class="section">
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">Dispatch Register</h2>
+          <p class="page-sub">Create and send a new official dispatch</p>
+        </div>
+        <div class="dispatch-badge">
+          <span class="badge-label">Next Dispatch No.</span>
+          <span class="badge-num" id="dispatch-num-display">—</span>
+        </div>
+      </div>
+
+      <form id="dispatch-form" autocomplete="off">
+
+        <!-- Row: Date + Nature -->
+        <div class="form-card">
+          <div class="card-title">📌 Basic Information</div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="date">Date <span class="req">*</span></label>
+              <input type="date" id="date" required onchange="updateDispatchNo()">
             </div>
-            <label>Select Offices</label>
-            <div id="office-checkboxes" class="checkbox-group"></div>
-            
-            <label>School Type</label>
+            <div class="form-group">
+              <label for="nature">Nature / Category <span class="req">*</span></label>
+              <input type="text" id="nature" placeholder="e.g. Inspection, Inquiry, Letter" required>
+            </div>
+          </div>
+        </div>
+
+        <!-- Offices -->
+        <div class="form-card">
+          <div class="card-title">🏢 Send To (Offices) <span class="req">*</span></div>
+          <div id="office-checkboxes" class="checkbox-grid">
+            <p class="placeholder-sm">Add offices in Settings first.</p>
+          </div>
+        </div>
+
+        <!-- School -->
+        <div class="form-card">
+          <div class="card-title">🏫 School Information</div>
+          <div class="form-group">
+            <label for="school-type">School Category</label>
             <select id="school-type" onchange="toggleSchoolInputs()">
-                <option value="govt">Government</option>
-                <option value="private">Private</option>
+              <option value="">— No School —</option>
             </select>
+          </div>
 
-            <div id="govt-inputs">
-                <label>EMIS Code</label>
-                <div class="row"><input type="text" id="emis-code" maxlength="8"><button type="button" onclick="validateEmis()">Verify</button></div>
-                <input type="text" id="govt-school-name" readonly placeholder="School Name">
+          <div id="govt-inputs" class="hidden sub-panel">
+            <div class="form-group">
+              <label>EMIS Code <span class="req">*</span>
+                <span class="label-hint">(exactly 8 digits)</span>
+              </label>
+              <div class="input-action-row">
+                <input type="text" id="emis-code" maxlength="8" placeholder="Enter 8-digit code" inputmode="numeric">
+                <button type="button" class="btn-verify" onclick="validateEmis()">Verify</button>
+              </div>
+              <input type="text" id="govt-school-name" class="result-field" readonly placeholder="School name will appear after verification">
             </div>
+          </div>
 
-            <div id="private-inputs" class="hidden">
-                <label>Private School Name</label>
-                <input type="text" id="private-school-name">
+          <div id="private-inputs" class="hidden sub-panel">
+            <div class="form-group">
+              <label for="private-school-name">School Name <span class="req">*</span></label>
+              <input type="text" id="private-school-name" placeholder="Enter school name">
             </div>
+          </div>
+        </div>
 
-            <label>Subject</label>
-            <textarea id="subject" rows="2" required></textarea>
-            <label>Accused Name</label>
-            <input type="text" id="accused-name">
-            <label>Upload File</label>
-            <input type="file" id="report-file" required>
-            <button type="submit" id="submit-btn" style="width:100%; margin-top:20px; background:#28a745; color:white; border:none; padding:10px;">Submit</button>
-        </form>
+        <!-- Subject + Details -->
+        <div class="form-card">
+          <div class="card-title">📝 Dispatch Content</div>
+          <div class="form-group">
+            <label for="subject">Subject <span class="req">*</span></label>
+            <input type="text" id="subject" placeholder="Brief subject line of this dispatch" required>
+          </div>
+          <div class="form-group">
+            <label for="details">Details / Description</label>
+            <textarea id="details" rows="5" placeholder="Full description, instructions, background details, findings…"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="accused-name">Accused / Concerned Person</label>
+            <input type="text" id="accused-name" placeholder="Name (if applicable)">
+          </div>
+        </div>
+
+        <!-- File Upload -->
+        <div class="form-card">
+          <div class="card-title">📎 Attach File <span class="req">*</span></div>
+          <div id="drop-zone" class="drop-zone"
+            ondragover="handleDragOver(event)"
+            ondragleave="handleDragLeave()"
+            ondrop="handleDrop(event)"
+            onclick="document.getElementById('report-file').click()">
+            <div id="drop-content">
+              <div class="drop-icon">📎</div>
+              <div class="drop-text">Drag & drop file here</div>
+              <div class="drop-hint">or click to browse · PDF, DOCX, JPG, PNG accepted</div>
+            </div>
+          </div>
+          <input type="file" id="report-file" class="hidden" onchange="handleFileSelect(event)">
+        </div>
+
+        <button type="submit" id="submit-btn" class="btn-submit">
+          <span>Submit Dispatch</span>
+          <span class="btn-arrow">→</span>
+        </button>
+      </form>
     </section>
 
-    <section id="reports" class="hidden">
-        <h2>Reports</h2>
-        <div class="row"><input type="date" id="filter-date"><input type="text" id="filter-keyword" placeholder="Search keywords..."></div>
-        <button onclick="loadReports()">Filter</button>
-        <div id="report-list" style="margin-top:20px;"></div>
+    <!-- ─── REPORTS ─── -->
+    <section id="reports" class="section hidden">
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">Reports</h2>
+          <p class="page-sub">View and manage all dispatch records</p>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filter-card">
+        <div class="filter-row">
+          <div class="form-group">
+            <label>Filter by Date</label>
+            <input type="date" id="filter-date">
+          </div>
+          <div class="form-group">
+            <label>Filter by Year</label>
+            <input type="number" id="filter-year" placeholder="e.g. 2026" min="2020" max="2099">
+          </div>
+          <div class="form-group filter-kw">
+            <label>Keyword Search</label>
+            <input type="text" id="filter-keyword" placeholder="Search subject, school, office, nature…">
+          </div>
+          <div class="filter-btn-wrap">
+            <button class="btn-primary" onclick="applyFilters()">🔍 Search</button>
+            <button class="btn-ghost" onclick="clearFilters()">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('active')">
+          Active Dispatches
+          <span class="tab-count" id="active-count">0</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('deleted')">
+          Recycle Bin <span class="tab-count" id="deleted-count">0</span>
+        </button>
+      </div>
+
+      <div id="active-reports"></div>
+      <div id="deleted-reports" class="hidden"></div>
     </section>
 
-    <section id="settings" class="hidden">
-        <h2>Settings</h2>
-        <button>Add/Edit Offices</button><br><br>
-        <button>Add/Edit Categories</button>
+    <!-- ─── SETTINGS ─── -->
+    <section id="settings" class="section hidden">
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">Settings</h2>
+          <p class="page-sub">Manage offices and school categories</p>
+        </div>
+      </div>
+
+      <div class="stab-bar">
+        <button class="stab-btn active" onclick="showSettingsTab('offices')">🏢 Manage Offices</button>
+        <button class="stab-btn" onclick="showSettingsTab('categories')">🏫 School Categories</button>
+      </div>
+
+      <!-- Offices -->
+      <div id="settings-offices">
+        <div class="settings-toolbar">
+          <button class="btn-primary" onclick="openOfficeModal()">+ Add Office</button>
+        </div>
+        <div id="offices-list"></div>
+      </div>
+
+      <!-- Categories -->
+      <div id="settings-categories" class="hidden">
+        <div class="settings-toolbar">
+          <button class="btn-primary" onclick="openCategoryModal()">+ Add Category</button>
+        </div>
+        <p class="settings-note">ℹ "Government" and "Private" are default categories. All categories can be edited or deleted.</p>
+        <div id="categories-list"></div>
+      </div>
     </section>
+
+  </main>
+</div>
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- Loading -->
+<div id="loading-modal" class="modal-overlay hidden">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p id="loading-text">Please wait…</p>
+  </div>
+</div>
+
+<!-- First-Time Setup -->
+<div id="setup-modal" class="modal-overlay hidden">
+  <div class="modal-box setup-modal-box">
+    <div class="setup-header">
+      <div class="setup-emoji">🔧</div>
+      <h3>Setting Up Your Workspace</h3>
+      <p>Creating your personal Google Sheet and Drive folder. This happens only once.</p>
+    </div>
+    <div id="setup-steps" class="setup-steps"></div>
+  </div>
+</div>
+
+<!-- View Dispatch -->
+<div id="dispatch-modal" class="modal-overlay hidden" onclick="maybeCloseModal(event,'dispatch-modal')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="dispatch-modal-title">Dispatch Details</h3>
+      <button class="modal-close" onclick="closeModal('dispatch-modal')">✕</button>
+    </div>
+    <div id="dispatch-modal-content"></div>
+  </div>
+</div>
+
+<!-- Office Modal -->
+<div id="office-modal" class="modal-overlay hidden" onclick="maybeCloseModal(event,'office-modal')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="office-modal-title">Add Office</h3>
+      <button class="modal-close" onclick="closeModal('office-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Office Name <span class="req">*</span></label>
+      <input type="text" id="office-name-input" placeholder="e.g. District Education Authority">
+    </div>
+    <div class="form-group">
+      <label>Present Officer Name <span class="req">*</span></label>
+      <input type="text" id="officer-name-input" placeholder="Full name of the officer">
+    </div>
+    <div class="form-group">
+      <label>Email IDs</label>
+      <div id="email-inputs-container"></div>
+      <button type="button" class="btn-add-field" onclick="addEmailInput()">+ Add Another Email</button>
+    </div>
+    <div class="form-group">
+      <label>Phone Numbers</label>
+      <div id="phone-inputs-container"></div>
+      <button type="button" class="btn-add-field" onclick="addPhoneInput()">+ Add Another Phone</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeModal('office-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveOffice()">Save Office</button>
+    </div>
+  </div>
+</div>
+
+<!-- Category Modal -->
+<div id="category-modal" class="modal-overlay hidden" onclick="maybeCloseModal(event,'category-modal')">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h3 id="cat-modal-title">Add School Category</h3>
+      <button class="modal-close" onclick="closeModal('category-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Category Name <span class="req">*</span></label>
+      <input type="text" id="category-name-input" placeholder="e.g. Government, Private, Semi-Govt">
+    </div>
+    <div class="form-group">
+      <label>Input Type Required</label>
+      <select id="category-emis">
+        <option value="yes">EMIS Code (Government School)</option>
+        <option value="no">Name Only (Private / Other)</option>
+        <option value="none">Not School-Related</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeModal('category-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveCategory()">Save Category</button>
+    </div>
+  </div>
 </div>
 
 <script src="app.js"></script>
