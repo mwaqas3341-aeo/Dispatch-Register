@@ -2,17 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AEO Dispatch Portal</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
+        :root { --primary: #0056b3; }
         body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; padding: 20px; }
-        .card { max-width: 800px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .card { max-width: 700px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .row { display: flex; gap: 15px; margin-bottom: 15px; }
         .col { flex: 1; }
-        label { font-weight: 600; display: block; margin-bottom: 5px; }
+        label { font-weight: 600; display: block; margin-bottom: 5px; color: #333; }
         input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
         .hidden { display: none; }
-        .email-preview { background: #eef2ff; padding: 10px; border-radius: 6px; font-size: 0.85rem; color: #4338ca; margin-top: 10px; }
+        #auth-section { text-align: center; padding: 50px; }
     </style>
 </head>
 <body>
@@ -20,57 +22,53 @@
 <div class="card">
     <div id="auth-section">
         <h2>AEO Dispatch Portal</h2>
-        <button id="auth-btn">Sign in with Google</button>
+        <button id="auth-btn" style="background:#0056b3; color:white; padding:10px 20px; border:none; cursor:pointer;">Sign in with Google</button>
     </div>
 
     <div id="dashboard" class="hidden">
-        <h2 style="color: #0056b3;">Dispatch # <span id="dispatch-num-display">...</span></h2>
+        <h2 style="color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px;">
+            Dispatch # <span id="dispatch-num-display">...</span>
+        </h2>
         
         <form id="dispatch-form">
             <div class="row">
-                <div class="col"><label>Date</label><input type="date" id="date" required></div>
+                <div class="col"><label>Report Date</label><input type="date" id="date" required></div>
                 <div class="col"><label>Nature</label><select id="nature"><option>Routine</option><option>Urgent</option></select></div>
             </div>
 
-            <div class="row">
-                <div class="col">
-                    <label>Offices (Ctrl+Click to select multiple)</label>
-                    <select id="office-select" multiple size="3" style="height: auto;"></select>
-                    <div id="selected-emails" class="email-preview">Select offices to see emails...</div>
-                </div>
-            </div>
+            <label>Select Offices</label>
+            <select id="office-select" multiple size="3" style="margin-bottom:15px;"></select>
 
-            <div class="row">
-                <div class="col">
-                    <label>School Type</label>
-                    <select id="school-type">
-                        <option value="govt">Government</option>
-                        <option value="private">Private</option>
-                    </select>
-                </div>
-            </div>
+            <label>School Type</label>
+            <select id="school-type" style="margin-bottom:15px;">
+                <option value="govt">Government</option>
+                <option value="private">Private</option>
+            </select>
 
             <div id="govt-section">
                 <label>EMIS Code</label>
                 <div class="row">
-                    <input type="text" id="emis-code" placeholder="8-digit code" maxlength="8" style="flex: 3;">
+                    <input type="text" id="emis-code" maxlength="8" style="flex: 3;">
                     <button type="button" id="validate-btn" style="flex: 1;">Validate</button>
                 </div>
-                <input type="text" id="govt-school-name" readonly placeholder="School Name (Locked)">
+                <input type="text" id="govt-school-name" readonly placeholder="School Name (Locked)" style="background:#f9f9f9; margin-bottom:15px;">
             </div>
 
             <div id="private-section" class="hidden">
                 <label>Private School Name</label>
-                <input type="text" id="private-school-name">
+                <input type="text" id="private-school-name" style="margin-bottom:15px;">
             </div>
 
-            <label>Details</label>
-            <textarea id="details" rows="4" placeholder="Enter report paragraph..."></textarea>
+            <label>Description / Subject</label>
+            <textarea id="subject" rows="3" required style="margin-bottom:15px;"></textarea>
 
-            <label>Upload File</label>
+            <label>Accused Name</label>
+            <input type="text" id="accused-name" style="margin-bottom:15px;">
+
+            <label>Upload Report File</label>
             <input type="file" id="report-file" required>
 
-            <button type="submit" id="submit-btn" style="background:#0056b3; color:white; margin-top:20px;">Generate Dispatch & Email</button>
+            <button type="submit" id="submit-btn" style="width:100%; background:#28a745; color:white; padding:12px; border:none; margin-top:20px; cursor:pointer;">Generate Dispatch & Email</button>
         </form>
     </div>
 </div>
