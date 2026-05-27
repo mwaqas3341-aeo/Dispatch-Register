@@ -2,76 +2,86 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AEO Dispatch Portal</title>
+    <title>AEO Dispatch System</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
-        :root { --primary: #0056b3; }
-        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; padding: 20px; }
-        .card { max-width: 700px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; margin: 0; }
+        nav { background: #0056b3; color: white; padding: 1rem; display: flex; gap: 20px; }
+        nav button { background: none; border: none; color: white; cursor: pointer; font-size: 16px; }
+        .card { max-width: 800px; margin: 20px auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .hidden { display: none; }
         .row { display: flex; gap: 15px; margin-bottom: 15px; }
         .col { flex: 1; }
-        label { font-weight: 600; display: block; margin-bottom: 5px; color: #333; }
-        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-        .hidden { display: none; }
-        #auth-section { text-align: center; padding: 50px; }
+        label { font-weight: 600; display: block; margin-bottom: 5px; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+        .checkbox-group { height: 100px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
+<nav>
+    <button onclick="showSection('dashboard')">Dashboard</button>
+    <button onclick="showSection('reports')">Reports</button>
+    <button onclick="showSection('settings')">Settings</button>
+</nav>
+
 <div class="card">
     <div id="auth-section">
-        <h2>AEO Dispatch Portal</h2>
-        <button id="auth-btn" style="background:#0056b3; color:white; padding:10px 20px; border:none; cursor:pointer;">Sign in with Google</button>
+        <h2>AEO Dispatch System</h2>
+        <button id="auth-btn">Sign in with Google</button>
     </div>
 
-    <div id="dashboard" class="hidden">
-        <h2 style="color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px;">
-            Dispatch # <span id="dispatch-num-display">...</span>
-        </h2>
-        
+    <section id="dashboard" class="hidden">
+        <h2>Dispatch # <span id="dispatch-num-display">Loading...</span></h2>
         <form id="dispatch-form">
             <div class="row">
-                <div class="col"><label>Report Date</label><input type="date" id="date" required></div>
-                <div class="col"><label>Nature</label><select id="nature"><option>Routine</option><option>Urgent</option></select></div>
+                <div class="col"><label>Date</label><input type="date" id="date" required></div>
+                <div class="col"><label>Category/Nature</label><input type="text" id="nature" placeholder="e.g., Inspection"></div>
             </div>
-
             <label>Select Offices</label>
-            <select id="office-select" multiple size="3" style="margin-bottom:15px;"></select>
-
+            <div id="office-checkboxes" class="checkbox-group"></div>
+            
             <label>School Type</label>
-            <select id="school-type" style="margin-bottom:15px;">
+            <select id="school-type" onchange="toggleSchoolInputs()">
                 <option value="govt">Government</option>
                 <option value="private">Private</option>
             </select>
 
-            <div id="govt-section">
+            <div id="govt-inputs">
                 <label>EMIS Code</label>
-                <div class="row">
-                    <input type="text" id="emis-code" maxlength="8" style="flex: 3;">
-                    <button type="button" id="validate-btn" style="flex: 1;">Validate</button>
-                </div>
-                <input type="text" id="govt-school-name" readonly placeholder="School Name (Locked)" style="background:#f9f9f9; margin-bottom:15px;">
+                <div class="row"><input type="text" id="emis-code" maxlength="8"><button type="button" onclick="validateEmis()">Verify</button></div>
+                <input type="text" id="govt-school-name" readonly placeholder="School Name">
             </div>
 
-            <div id="private-section" class="hidden">
+            <div id="private-inputs" class="hidden">
                 <label>Private School Name</label>
-                <input type="text" id="private-school-name" style="margin-bottom:15px;">
+                <input type="text" id="private-school-name">
             </div>
 
-            <label>Description / Subject</label>
-            <textarea id="subject" rows="3" required style="margin-bottom:15px;"></textarea>
-
+            <label>Subject</label>
+            <textarea id="subject" rows="2" required></textarea>
             <label>Accused Name</label>
-            <input type="text" id="accused-name" style="margin-bottom:15px;">
-
-            <label>Upload Report File</label>
+            <input type="text" id="accused-name">
+            <label>Upload File</label>
             <input type="file" id="report-file" required>
-
-            <button type="submit" id="submit-btn" style="width:100%; background:#28a745; color:white; padding:12px; border:none; margin-top:20px; cursor:pointer;">Generate Dispatch & Email</button>
+            <button type="submit" id="submit-btn" style="width:100%; margin-top:20px; background:#28a745; color:white; border:none; padding:10px;">Submit</button>
         </form>
-    </div>
+    </section>
+
+    <section id="reports" class="hidden">
+        <h2>Reports</h2>
+        <div class="row"><input type="date" id="filter-date"><input type="text" id="filter-keyword" placeholder="Search keywords..."></div>
+        <button onclick="loadReports()">Filter</button>
+        <div id="report-list" style="margin-top:20px;"></div>
+    </section>
+
+    <section id="settings" class="hidden">
+        <h2>Settings</h2>
+        <button>Add/Edit Offices</button><br><br>
+        <button>Add/Edit Categories</button>
+    </section>
 </div>
+
 <script src="app.js"></script>
 </body>
 </html>
