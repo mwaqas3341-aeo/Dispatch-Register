@@ -654,21 +654,12 @@ var _pendingFile    = null;
 function callApi(action, data) {
   return fetch(GAS_API_URL, {
     method: 'POST',
-    // ★ Do NOT set Content-Type header here ★
-    // Default is text/plain which avoids CORS preflight.
+    // DO NOT set Content-Type header. Leave it as text/plain
     body: JSON.stringify({ token: _idToken, action: action, data: data || {} })
   })
   .then(function(r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
-  })
-  .then(function(result) {
-    if (result && result.error === 'Unauthorized') {
-      _handleSessionExpired();
-      throw new Error('Session expired. Please sign in again.');
-    }
-    if (result && result.error) throw new Error(result.error);
-    return result;
   });
 }
 
