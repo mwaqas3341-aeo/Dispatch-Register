@@ -3,57 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AEO Dispatch Register</title>
+    <title>AEO Dispatch Portal</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; padding: 20px; color: #333; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h2 { border-bottom: 2px solid #0056b3; padding-bottom: 10px; color: #0056b3; }
+        :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; }
+        body { font-family: 'Inter', system-ui, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; }
+        .wrapper { max-width: 600px; margin: 40px auto; }
+        
+        /* Dashboard Card */
+        .card { background: var(--card); padding: 2rem; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        
+        /* Header & Status */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .badge { padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; background: #dcfce7; color: #166534; }
+        
+        /* Forms */
+        .form-group { margin-bottom: 1.5rem; }
+        label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: #475569; }
+        input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #1d4ed8; }
+        
         .hidden { display: none; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; font-weight: bold; margin-bottom: 5px; }
-        input[type="text"], input[type="file"], select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        button { background-color: #0056b3; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 10px; }
-        button:hover { background-color: #004494; }
-        #auth-section { text-align: center; margin-top: 50px; }
-        #school-name-display { display: block; margin-top: 5px; font-weight: bold; color: #28a745; }
+        #auth-section { text-align: center; padding: 40px; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <div id="auth-section">
-            <h2>Digital Dispatch System</h2>
-            <p>Please sign in to connect your Google Workspace.</p>
-            <button id="auth-btn">Authorize Google Drive & Sheets</button>
-        </div>
-
-        <div id="dashboard" class="hidden">
-            <h2>Create New Dispatch</h2>
-            
-            <form id="dispatch-form">
-                <div class="form-group">
-                    <label for="emis-code">EMIS Code (Govt Schools):</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="emis-code" pattern="\d{8}" title="Must be exactly 8 digits" placeholder="e.g., 38220000" maxlength="8">
-                        <button type="button" id="validate-btn" style="margin-top: 0;">Validate</button>
-                    </div>
-                    <span id="school-name-display"></span>
-                </div>
-
-                <div class="form-group">
-                    <label for="subject">Dispatch Subject / Description:</label>
-                    <input type="text" id="subject" required placeholder="Enter the subject of the report">
-                </div>
-
-                <div class="form-group">
-                    <label for="report-file">Upload Report File:</label>
-                    <input type="file" id="report-file" required>
-                </div>
-
-                <button type="submit" id="submit-btn">Generate Dispatch & Upload</button>
-            </form>
-        </div>
+<div class="wrapper">
+    <div id="auth-section" class="card">
+        <h2>Dispatch Portal</h2>
+        <p>Login to access your dispatch registers.</p>
+        <button id="auth-btn">Sign in with Google</button>
     </div>
 
-  <script src="app.js"></script>
+    <div id="dashboard" class="card hidden">
+        <div class="header">
+            <h3>New Dispatch</h3>
+            <span class="badge" id="status-badge">Connected</span>
+        </div>
+
+        <form id="dispatch-form">
+            <div class="form-group">
+                <label>EMIS Code</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="emis-code" maxlength="8" placeholder="Enter 8-digit EMIS">
+                    <button type="button" id="validate-btn" style="width: 120px;">Check</button>
+                </div>
+                <small id="school-name-display" style="color: var(--primary); font-weight: bold;"></small>
+            </div>
+
+            <div class="form-group">
+                <label>Subject</label>
+                <input type="text" id="subject" required>
+            </div>
+
+            <div class="form-group">
+                <label>Upload File</label>
+                <input type="file" id="report-file" required>
+            </div>
+
+            <button type="submit" id="submit-btn">Send to Log</button>
+        </form>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
