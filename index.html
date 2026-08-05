@@ -9,6 +9,9 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
   <style>
     /* ═══════════════════════════════════════════
        DESIGN TOKENS
@@ -344,9 +347,7 @@
         <span>Your data is stored privately. Only you can access your dispatch records.</span>
       </div>
       <div class="signin-divider">─────── Sign in to continue ───────</div>
-      <button class="btn btn-pr" style="width:280px;margin:0 auto;" onclick="signInWithGoogle()">
-        <i class="fab fa-google" style="margin-right:8px;"></i>Sign in with Google
-      </button>
+      <div id="googleSignInDiv"></div>
     </div>
 
     <!-- s-checking: Verifying account -->
@@ -616,31 +617,19 @@
 <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="compression.js"></script>
 <script>
 'use strict';
 
 /* ═══════════════════════════════════════════════════
-   ★ CONFIGURATION — EDIT THESE VALUES ★
+   ★ CONFIGURATION — EDIT THESE TWO VALUES ★
 ═══════════════════════════════════════════════════ */
-var SUPABASE_URL      = 'https://cnvckclwrixpobigdrmu.supabase.co';
-var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNudmNrY2x3cml4cG9iaWdkcm11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4Mzg4NTUsImV4cCI6MjEwMTQxNDg1NX0.9COZcwPbhHfybivjlkYRbwolo4_dAFnHvw8AChBXIrY';
-
-// Slim GAS endpoint — kept ONLY for the two things Supabase can't do:
-// creating a per-user folder inside YOUR (developer) Drive, uploading a
-// file into it, and sending email from YOUR Gmail. No per-user OAuth,
-// no Google Console changes — same "execute as me" deployment model
-// you already use today. See gas-api/DriveMailApi.gs contract below.
-var DRIVE_GAS_URL     = 'PASTE_YOUR_SLIM_GAS_WEBAPP_URL_HERE';
-
-var sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+var GAS_API_URL      = 'https://script.google.com/macros/s/AKfycbw3XvPj-bhbF7xF3HKZwvg3RntVyPsl9Gwcw3QnLheCuc33i2AzUlevgqzmLXEvj2_i6g/exec';
+var GOOGLE_CLIENT_ID = '98478009111-segpk2092ubc0up0h4dne5fk2o8vhc2p.apps.googleusercontent.com';
 
 /* ═══════════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════════ */
-var _session     = null;   // Supabase auth session
-var _userId      = '';     // auth.uid()
+var _idToken     = '';
 var _adminConfig = {
   org_name:                 'Dispatch Register',
   department_name:          'Punjab School Education Department',
@@ -658,64 +647,104 @@ var _refreshTimer   = null;
 var _pendingFile    = null;
 
 /* ═══════════════════════════════════════════════════
-   CORE API BRIDGE — slim GAS, Drive upload + Gmail send ONLY.
-   Everything else in this file goes straight to Supabase.
+   CORE API BRIDGE
+   Replaces all google.script.run calls.
+   Sends POST to GAS with body as text/plain → no CORS preflight.
 ═══════════════════════════════════════════════════ */
-function callDriveApi(action, data) {
-  return sb.auth.getSession().then(function (s) {
-    var token = s.data.session ? s.data.session.access_token : '';
-    return fetch(DRIVE_GAS_URL, {
-      method: 'POST',
-      // DO NOT set Content-Type header. Leave it as text/plain
-      body: JSON.stringify({ token: token, action: action, data: data || {} })
-    }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    });
+function callApi(action, data) {
+  return fetch(GAS_API_URL, {
+    method: 'POST',
+    // DO NOT set Content-Type header. Leave it as text/plain
+    body: JSON.stringify({ token: _idToken, action: action, data: data || {} })
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
   });
 }
 
 /* ═══════════════════════════════════════════════════
-   SUPABASE AUTH  (Google provider — no Console changes needed;
-   configured once in Supabase dashboard → Authentication → Providers)
+   GOOGLE SIGN-IN (Identity Services)
 ═══════════════════════════════════════════════════ */
 
 window.onload = function () {
-  sb.auth.onAuthStateChange(function (event, session) {
-    if (session) {
-      _session = session;
-      _userId  = session.user.id;
-      document.getElementById('userEmailDisplay').textContent = session.user.email || 'your account';
-      showState('s-checking');
-      runCheckUserSetup();
-    } else {
-      _session = null;
-      _userId  = '';
-      showState('s-signin');
-    }
-  });
-
-  sb.auth.getSession().then(function (r) {
-    if (!r.data.session) showState('s-signin');
-    // if a session exists, onAuthStateChange above already fired with it
-  });
+  // Check stored token
+  var stored = sessionStorage.getItem('dr_token');
+  var exp    = parseInt(sessionStorage.getItem('dr_token_exp') || '0');
+  if (stored && Date.now() < exp) {
+    _idToken = stored;
+    showState('s-checking');
+    runCheckUserSetup();
+  } else {
+    showState('s-signin');
+    _initGoogleSignIn();
+  }
 };
 
-function signInWithGoogle() {
-  sb.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: window.location.href }
+function _initGoogleSignIn() {
+  // Wait for GSI script to load
+  if (typeof google === 'undefined' || !google.accounts) {
+    setTimeout(_initGoogleSignIn, 200);
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: _onSignIn,
+    auto_select: true,
+    cancel_on_tap_outside: false
   });
+  google.accounts.id.renderButton(
+    document.getElementById('googleSignInDiv'),
+    { theme: 'outline', size: 'large', width: 280, text: 'signin_with' }
+  );
+  google.accounts.id.prompt(); // One Tap
+}
+
+function _onSignIn(response) {
+  _idToken = response.credential;
+  // Store token (expires ~1 hour, we store for 55 min)
+  sessionStorage.setItem('dr_token', _idToken);
+  sessionStorage.setItem('dr_token_exp', String(Date.now() + 55 * 60 * 1000));
+
+  // Extract email from JWT payload (no crypto verify needed — GAS validates on each call)
+  var email = _jwtEmail(_idToken);
+  document.getElementById('userEmailDisplay').textContent = email || 'your account';
+
+  showState('s-checking');
+  runCheckUserSetup();
+}
+
+function _jwtEmail(token) {
+  try {
+    var parts   = token.split('.');
+    var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.email || '';
+  } catch (e) { return ''; }
+}
+
+function _handleSessionExpired() {
+  sessionStorage.removeItem('dr_token');
+  sessionStorage.removeItem('dr_token_exp');
+  _idToken = '';
+  document.getElementById('mainApp').style.display    = 'none';
+  document.getElementById('setupOverlay').style.display = 'flex';
+  showState('s-signin');
+  _initGoogleSignIn();
 }
 
 function signOut() {
   if (!confirm('Sign out of Dispatch Register?')) return;
+  sessionStorage.removeItem('dr_token');
+  sessionStorage.removeItem('dr_token_exp');
+  _idToken = '';
   stopAutoRefresh();
-  sb.auth.signOut().then(function () {
-    document.getElementById('mainApp').style.display    = 'none';
-    document.getElementById('setupOverlay').style.display = 'flex';
-    showState('s-signin');
-  });
+  if (typeof google !== 'undefined' && google.accounts) {
+    google.accounts.id.disableAutoSelect();
+  }
+  document.getElementById('mainApp').style.display    = 'none';
+  document.getElementById('setupOverlay').style.display = 'flex';
+  showState('s-signin');
+  _initGoogleSignIn();
 }
 
 /* ═══════════════════════════════════════════════════
@@ -723,49 +752,50 @@ function signOut() {
 ═══════════════════════════════════════════════════ */
 
 function runCheckUserSetup() {
-  // handle_new_user already auto-created this row on first sign-in with
-  // sensible defaults — we're just checking whether Drive setup ran yet.
-  sb.from('profiles').select('drive_connected, drive_folder_id').eq('user_id', _userId).maybeSingle()
-    .then(function (res) {
-      if (res.error) throw res.error;
-      if (res.data && res.data.drive_connected && res.data.drive_folder_id) {
-        showState('s-done');
-        setTimeout(function () { bootApp(_session.user.email); }, 1200);
-      } else {
-        document.getElementById('userEmailDisplay').textContent = _session.user.email || '';
-        showState('s-allow');
-      }
-    })
-    .catch(function (err) {
-      console.error('checkUserSetup failed:', err);
-      showState('s-signin');
-    });
+  callApi('checkUserSetup').then(function(r) {
+    onSetupResult(r);
+  }).catch(function(err) {
+    console.error('checkUserSetup failed:', err);
+    // API unreachable or token rejected — back to sign-in
+    showState('s-signin');
+    _initGoogleSignIn();
+  });
+}
+
+function onSetupResult(r) {
+  if (r.status === 'READY') {
+    showState('s-done');
+    setTimeout(function () { bootApp(r.email); }, 1200);
+    return;
+  }
+  if (r.status === 'SHEET_DELETED') { showState('s-deleted'); return; }
+  // NEW_USER
+  document.getElementById('userEmailDisplay').textContent = r.email || _jwtEmail(_idToken);
+  showState('s-allow');
 }
 
 function runInitSetup() {
-  var btn = document.getElementById('allowBtn');
+  var isAllow = document.getElementById('s-allow').style.display !== 'none';
+  var progId  = isAllow ? 'allowProgress' : 'recreateProgress';
+  var btn     = document.getElementById(isAllow ? 'allowBtn' : 'recreateBtn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spin-ring"></span> Setting up your workspace...';
-  document.getElementById('allowProgress').textContent = 'Creating your Drive folder...';
+  document.getElementById(progId).textContent = 'Creating spreadsheet and folder...';
 
-  // Folder is created inside the DEVELOPER's Drive (same model as before) —
-  // this call hits the slim GAS endpoint, not Google directly, so no
-  // per-user OAuth consent is needed.
-  callDriveApi('ensureUserDriveFolder', { email: _session.user.email }).then(function (r) {
-    if (!r.success) throw new Error(r.error || 'Folder creation failed');
-    return sb.from('profiles').update({
-      drive_folder_id: r.rootFolderId,
-      drive_connected: true,
-      gmail_connected: true   // sending goes through the same developer-owned account
-    }).eq('user_id', _userId);
-  }).then(function (res) {
-    if (res && res.error) throw res.error;
-    showState('s-done');
-    setTimeout(function () { bootApp(_session.user.email); }, 1400);
-  }).catch(function (err) {
+  callApi('initializeUserSystem').then(function(r) {
+    if (r.success) {
+      showState('s-done');
+      var email = _jwtEmail(_idToken);
+      setTimeout(function () { bootApp(email); }, 1400);
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-redo" style="margin-right:8px;"></i>Retry';
+      document.getElementById(progId).textContent = 'Error: ' + r.error;
+    }
+  }).catch(function(err) {
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-redo" style="margin-right:8px;"></i>Retry';
-    document.getElementById('allowProgress').textContent = 'Error: ' + err.message;
+    document.getElementById(progId).textContent = 'Error: ' + err.message;
   });
 }
 
@@ -813,9 +843,7 @@ function bootApp(email) {
    ADMIN CONFIG
 ═══════════════════════════════════════════════════ */
 function loadAdminConfig(callback) {
-  sb.from('profiles').select('*').eq('user_id', _userId).maybeSingle().then(function (res) {
-    if (res.error) throw res.error;
-    var cfg = res.data || {};
+  callApi('getAdminConfig').then(function (cfg) {
     _adminConfig = cfg;
 
     var orgName  = cfg.org_name        || 'Dispatch Register';
@@ -826,11 +854,12 @@ function loadAdminConfig(callback) {
     _setText('setupOrgTitle', orgName);
     _setText('setupDeptName', deptName);
 
-    // Populate school types dropdown (school_types is a real text[] column here)
+    // Populate school types dropdown
     var schoolTypeEl = document.getElementById('schoolType');
-    if (schoolTypeEl && cfg.school_types && cfg.school_types.length) {
+    if (schoolTypeEl && cfg.school_types) {
+      var types = cfg.school_types.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
       schoolTypeEl.innerHTML = '<option value="">-- Select --</option>';
-      cfg.school_types.forEach(function (t) {
+      types.forEach(function (t) {
         var opt = document.createElement('option');
         opt.value = t; opt.textContent = t;
         schoolTypeEl.appendChild(opt);
@@ -871,13 +900,11 @@ function switchTab(name, btn) {
    STATS
 ═══════════════════════════════════════════════════ */
 function loadStats() {
-  sb.rpc('get_dashboard_stats').then(function (res) {
-    if (res.error) throw res.error;
-    var s = (res.data && res.data[0]) || {};
-    _setText('st-total',   s.total      || 0);
-    _setText('st-month',   s.this_month || 0);
-    _setText('st-offices', s.offices    || 0);
-    _setText('st-deleted', s.deleted    || 0);
+  callApi('getDashboardStats').then(function (s) {
+    _setText('st-total',   s.total);
+    _setText('st-month',   s.thisMonth);
+    _setText('st-offices', s.offices);
+    _setText('st-deleted', s.deleted);
   }).catch(function () {});
 }
 
@@ -885,25 +912,12 @@ function loadStats() {
    MASTER DATA (contacts)
 ═══════════════════════════════════════════════════ */
 function loadMasterData() {
-  sb.from('contacts')
-    .select('id, office_name, officer_name, email_office, email_personal, cell_no')
-    .order('office_name')
-    .then(function (res) {
-      if (res.error) throw res.error;
-      _allContacts = (res.data || []).map(function (c) {
-        return {
-          officeId:      c.id,
-          officeName:    c.office_name,
-          officerName:   c.officer_name   || '',
-          emailOffice:   c.email_office   || '',
-          emailPersonal: c.email_personal || '',
-          cellNo:        c.cell_no        || ''
-        };
-      });
-      _fillOfficeCheckboxes(_allContacts);
-      _fillFilterOfficeDropdown(_allContacts);
-      _renderContactsGrid(_allContacts);
-    }).catch(function (e) { console.warn('loadMasterData:', e); });
+  callApi('getAllContacts').then(function (r) {
+    _allContacts = r.contacts || [];
+    _fillOfficeCheckboxes(_allContacts);
+    _fillFilterOfficeDropdown(_allContacts);
+    _renderContactsGrid(_allContacts);
+  }).catch(function (e) { console.warn('loadMasterData:', e); });
 }
 
 function _fillOfficeCheckboxes(contacts) {
@@ -941,13 +955,8 @@ function fetchDispatchNo() {
   var d = document.getElementById('reportDate').value;
   if (!d) return;
   var year = new Date(d + 'T00:00:00').getFullYear();
-  // Read-only preview — does NOT reserve/consume a number (dispatch_counters
-  // is directly SELECT-able for your own rows). The real number is assigned
-  // atomically inside submit_dispatch() at actual submit time.
-  sb.from('dispatch_counters').select('last_number').eq('year', year).maybeSingle().then(function (res) {
-    if (res.error) throw res.error;
-    var next = ((res.data && res.data.last_number) || 0) + 1;
-    document.getElementById('dispatchNo').textContent = year + '-' + String(next).padStart(4, '0');
+  callApi('getNextDispatchNo', { year: year }).then(function (r) {
+    document.getElementById('dispatchNo').textContent = r.value;
   }).catch(function () {});
 }
 
@@ -991,21 +1000,20 @@ function updateEmailNotices(selected) {
     noEmailNotice.style.display = 'none';
     return;
   }
-  // Resolved locally from _allContacts (already loaded by loadMasterData) —
-  // no network round-trip needed for this preview.
-  var emails = [];
-  selected.forEach(function (officeName) {
-    var c = _allContacts.find(function (x) { return x.officeName === officeName; });
-    if (c) [c.emailOffice, c.emailPersonal].forEach(function (e) { if (e && e.trim()) emails.push(e.trim()); });
-  });
-  if (!emails.length) {
+  callApi('getEmailsForOffices', { offices: selected }).then(function (r) {
+    var emails = (r.emails || []).filter(function (e) { return e && e.trim(); });
+    if (!emails.length) {
+      emailNotice.style.display   = 'none';
+      noEmailNotice.style.display = 'flex';
+    } else {
+      targetEl.textContent        = emails.join(', ');
+      emailNotice.style.display   = 'flex';
+      noEmailNotice.style.display = emails.length < selected.length ? 'flex' : 'none';
+    }
+  }).catch(function () {
     emailNotice.style.display   = 'none';
-    noEmailNotice.style.display = selected.length ? 'flex' : 'none';
-  } else {
-    targetEl.textContent        = emails.join(', ');
-    emailNotice.style.display   = 'flex';
-    noEmailNotice.style.display = emails.length < selected.length ? 'flex' : 'none';
-  }
+    noEmailNotice.style.display = 'none';
+  });
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1029,11 +1037,10 @@ function fetchSchoolByEMIS() {
   var el = document.getElementById('emisResult');
   if (v.length === 8) {
     el.style.display = ''; el.className = 'emis-result'; el.textContent = 'Searching...';
-    sb.from('schools_master').select('school_name').eq('emis_code', v).maybeSingle().then(function (res) {
-      if (res.error) throw res.error;
-      if (res.data) {
-        el.textContent = '✔ ' + res.data.school_name; el.className = 'emis-result emis-ok';
-        document.getElementById('schoolName') && (document.getElementById('schoolName').value = res.data.school_name);
+    callApi('getSchoolNameByEMIS', { emisCode: v }).then(function (r) {
+      if (r.name) {
+        el.textContent = '✔ ' + r.name; el.className = 'emis-result emis-ok';
+        document.getElementById('schoolName') && (document.getElementById('schoolName').value = r.name);
       } else {
         el.textContent = '✘ School not found'; el.className = 'emis-result emis-err';
       }
@@ -1083,82 +1090,33 @@ function submitDispatch() {
   btn.disabled = true;
   document.getElementById('formMsg').innerHTML = '<span class="spin-sm"></span> Saving and sending...';
 
-  function doSubmit(b64, fname, fmime, compressionReport) {
-    // Atomic: assigns the real dispatch number (sr_no + dispatch_no) AND
-    // inserts the record + office links in one DB transaction, so
-    // concurrent submissions can never collide.
-    sb.rpc('submit_dispatch', {
-      p_report_date:       document.getElementById('reportDate').value,
-      p_category:          document.getElementById('fCategory').value.trim(),
-      p_school_type:       t,
-      p_emis_code:         emis || null,
-      p_school_name:       sname || null,
-      p_accused_name:      document.getElementById('fAccused').value.trim(),
-      p_description:       document.getElementById('fDescription').value.trim(),
-      p_remarks:           document.getElementById('fRemarks').value.trim(),
-      p_other_office_name: document.getElementById('otherOfficeName').value.trim(),
-      p_office_names:      selOffices
-    }).then(function (res) {
-      if (res.error) throw res.error;
-      var rec = res.data[0]; // table-returning RPCs come back as an array
-      document.getElementById('dispatchNo').textContent = rec.dispatch_no;
-
-      // Upload (developer-owned Drive, this user's folder) + email the
-      // resolved office contacts (developer-owned Gmail) via the slim
-      // GAS endpoint. Returns per-office send results so we can record
-      // them on dispatch_offices (email_status/email_error/sent_at).
-      return callDriveApi('processDispatchFile', {
-        dispatchId:      rec.id,
-        dispatchNo:      rec.dispatch_no,
-        reportDate:      document.getElementById('reportDate').value,
-        category:        document.getElementById('fCategory').value.trim(),
-        offices:         selOffices,
-        otherOfficeName: document.getElementById('otherOfficeName').value.trim(),
-        description:     document.getElementById('fDescription').value.trim(),
-        fileBase64:      b64   || '',
-        fileName:        fname || '',
-        fileMime:        fmime || ''
-      }).then(function (dr) {
-        var chain = Promise.resolve();
-
-        if (b64 && dr && dr.driveFileId) {
-          chain = chain.then(function () {
-            return _sha256Base64(b64).then(function (checksum) {
-              return sb.from('attachments').insert({
-                dispatch_id:          rec.id,
-                file_name:            fname,
-                mime_type:            fmime,
-                drive_file_id:        dr.driveFileId,
-                drive_folder_id:      dr.driveFolderId,
-                size_bytes:           (compressionReport && compressionReport.finalSize)    || null,
-                original_size_bytes:  (compressionReport && compressionReport.originalSize) || null,
-                compression_method:   (compressionReport && compressionReport.method)       || 'none',
-                checksum_sha256:      checksum
-              });
-            });
-          });
-        }
-
-        if (dr && dr.emailResults && dr.emailResults.length) {
-          dr.emailResults.forEach(function (r) {
-            chain = chain.then(function () {
-              return sb.from('dispatch_offices').update({
-                email_status:  r.status,        // 'sent' | 'failed' | 'skipped_no_email'
-                email_sent_to: r.sentTo || null,
-                email_error:   r.error  || null,
-                sent_at:       r.status === 'sent' ? new Date().toISOString() : null
-              }).eq('dispatch_id', rec.id).eq('office_name', r.officeName);
-            });
-          });
-        }
-        return chain;
-      });
-    }).then(function () {
+  function doSubmit(b64, fname, fmime) {
+    var formData = {
+      dispatchNo:      document.getElementById('dispatchNo').textContent,
+      reportDate:      document.getElementById('reportDate').value,
+      category:        document.getElementById('fCategory').value.trim(),
+      selectedOffices: selOffices,
+      otherOfficeName: document.getElementById('otherOfficeName').value.trim(),
+      schoolType:      t,
+      emisCode:        emis,
+      schoolName:      sname,
+      accusedName:     document.getElementById('fAccused').value.trim(),
+      description:     document.getElementById('fDescription').value.trim(),
+      remarks:         document.getElementById('fRemarks').value.trim(),
+      fileBase64:      b64   || '',
+      fileName:        fname || '',
+      fileMime:        fmime || ''
+    };
+    callApi('processForm', { formData: formData }).then(function (r) {
       btn.disabled = false;
       document.getElementById('formMsg').innerHTML = '';
-      showToast('Dispatch saved!');
-      _resetDispatchForm();
-      loadStats();
+      if (r.success) {
+        showToast(r.message || 'Dispatch saved!');
+        _resetDispatchForm();
+        loadStats();
+      } else {
+        showToast('Error: ' + r.error, true);
+      }
     }).catch(function (err) {
       btn.disabled = false;
       document.getElementById('formMsg').innerHTML = '';
@@ -1166,30 +1124,16 @@ function submitDispatch() {
     });
   }
 
-  function _sha256Base64(b64) {
-    var bytes = atob(b64);
-    var buf = new Uint8Array(bytes.length);
-    for (var i = 0; i < bytes.length; i++) buf[i] = bytes.charCodeAt(i);
-    return crypto.subtle.digest('SHA-256', buf).then(function (hash) {
-      return Array.from(new Uint8Array(hash)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
-    });
-  }
-
   if (_pendingFile) {
-    // Phase 2 compression happens right here, before the file ever leaves
-    // the browser — see compression.js.
-    DRCompress.compressFile(_pendingFile).then(function (result) {
-      var f = result.file;
-      var reader = new FileReader();
-      reader.onload = function (e) {
-        var parts = e.target.result.split(',');
-        doSubmit(parts[1], f.name, f.type, result.report);
-      };
-      reader.onerror = function () { showToast('Could not read file. Saving without attachment.', true); doSubmit('', '', '', null); };
-      reader.readAsDataURL(f);
-    });
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var parts = e.target.result.split(',');
+      doSubmit(parts[1], _pendingFile.name, _pendingFile.type);
+    };
+    reader.onerror = function () { showToast('Could not read file. Saving without attachment.', true); doSubmit('', '', ''); };
+    reader.readAsDataURL(_pendingFile);
   } else {
-    doSubmit('', '', '', null);
+    doSubmit('', '', '');
   }
 }
 
@@ -1219,45 +1163,13 @@ function _resetDispatchForm() {
 function loadReports() {
   var el = document.getElementById('reportSection');
   el.innerHTML = '<div style="padding:20px;text-align:center;"><span class="spin-sm"></span> Loading...</div>';
-
-  var fromDate = document.getElementById('fromDate').value;
-  var toDate   = document.getElementById('toDate').value;
-  var office   = document.getElementById('filterOffice').value;
-  var keyword  = document.getElementById('filterKeyword').value.trim();
-
-  var q = sb.from('dispatch_records')
-    .select('id, sr_no, dispatch_no, report_date, category, school_type, school_name, emis_code, accused_name, description, remarks, other_office_name, dispatch_offices(office_name), attachments(id)')
-    .is('deleted_at', null)
-    .order('report_date', { ascending: false });
-
-  if (fromDate) q = q.gte('report_date', fromDate);
-  if (toDate)   q = q.lte('report_date', toDate);
-  if (keyword)  q = q.or('category.ilike.%' + keyword + '%,description.ilike.%' + keyword + '%,remarks.ilike.%' + keyword + '%,accused_name.ilike.%' + keyword + '%');
-
-  q.then(function (res) {
-    if (res.error) throw res.error;
-    var records = (res.data || []).map(function (r) {
-      var officeNames = (r.dispatch_offices || []).map(function (x) { return x.office_name; }).filter(Boolean);
-      return {
-        id:           r.id,
-        srNo:         r.sr_no,
-        reportDate:   r.report_date,
-        dispatchNo:   r.dispatch_no,
-        selectOffice: officeNames.join(', '),
-        category:     r.category,
-        schoolType:   r.school_type,
-        schoolName:   r.school_name,
-        emisCode:     r.emis_code,
-        accusedName:  r.accused_name,
-        description:  r.description,
-        remarks:      r.remarks,
-        hasFile:      (r.attachments || []).length > 0
-      };
-    });
-    // Office filter applied client-side (multi-office records make the
-    // server-side inner-join filter awkward with the free-text "Other" case)
-    if (office) records = records.filter(function (r) { return r.selectOffice.indexOf(office) !== -1; });
-    _lastReportData = records;
+  callApi('getFilteredReports', { filters: {
+    fromDate: document.getElementById('fromDate').value,
+    toDate:   document.getElementById('toDate').value,
+    office:   document.getElementById('filterOffice').value,
+    keyword:  document.getElementById('filterKeyword').value.trim()
+  }}).then(function (r) {
+    _lastReportData = r.records || [];
     _renderReports(_lastReportData);
   }).catch(function (e) {
     el.innerHTML = '<div class="alert a-err">Error: ' + e.message + '</div>';
@@ -1269,24 +1181,24 @@ function _renderReports(data) {
   if (!data || !data.length) { el.innerHTML = '<div class="alert a-info">No records found for these filters.</div>'; return; }
   var h = '<div style="font-size:.8rem;color:var(--sub);margin-bottom:8px;">' + data.length + ' record(s) found</div>' +
     '<div style="overflow-x:auto;"><table class="dtable"><thead><tr><th>#</th><th>Date</th><th>Dispatch</th><th>Office</th><th>Category</th><th>Actions</th></tr></thead><tbody>';
-  data.forEach(function (r, i) {
+  data.forEach(function (r) {
     h += '<tr>' +
-      '<td style="color:var(--sub);">' + (i + 1) + '</td>' +
+      '<td style="color:var(--sub);">' + (r.srNo || '') + '</td>' +
       '<td style="white-space:nowrap;">' + (r.reportDate || '') + '</td>' +
       '<td><strong style="color:var(--navy2);font-family:\'JetBrains Mono\',monospace;">' + esc(r.dispatchNo) + '</strong></td>' +
       '<td style="max-width:120px;">' + esc(r.selectOffice) + '</td>' +
       '<td style="max-width:100px;">' + esc(r.category) + '</td>' +
       '<td style="white-space:nowrap;">' +
-      '<button class="act-btn ab-view" onclick="viewDetail(\'' + r.id + '\')" title="View"><i class="fas fa-eye"></i></button>' +
-      (r.hasFile ? '<button class="act-btn ab-dl" onclick="dlFile(\'' + r.id + '\')" title="Download"><i class="fas fa-download"></i></button>' : '') +
-      '<button class="act-btn ab-del" onclick="delReport(\'' + r.id + '\')" title="Delete"><i class="fas fa-trash"></i></button>' +
+      '<button class="act-btn ab-view" onclick="viewDetail(' + r.rowNum + ')" title="View"><i class="fas fa-eye"></i></button>' +
+      (r.hasFile ? '<button class="act-btn ab-dl" onclick="dlFile(' + r.rowNum + ')" title="Download"><i class="fas fa-download"></i></button>' : '') +
+      '<button class="act-btn ab-del" onclick="delReport(' + r.rowNum + ')" title="Delete"><i class="fas fa-trash"></i></button>' +
       '</td></tr>';
   });
   el.innerHTML = h + '</tbody></table></div>';
 }
 
-function viewDetail(id) {
-  var rec = _lastReportData.find(function (r) { return r.id === id; });
+function viewDetail(rowNum) {
+  var rec = _lastReportData.find(function (r) { return r.rowNum === rowNum; });
   if (!rec) return;
   var b = document.getElementById('detailBody');
   b.innerHTML = [
@@ -1302,30 +1214,23 @@ function viewDetail(id) {
   openModal('detailModal');
 }
 
-function dlFile(id) {
+function dlFile(rowNum) {
   showToast('Preparing download...');
-  // The file lives in the developer's Drive, so the browser can't fetch it
-  // directly — the slim GAS endpoint proxies the bytes back as base64.
-  sb.from('attachments').select('drive_file_id, file_name, mime_type').eq('dispatch_id', id).maybeSingle().then(function (res) {
-    if (res.error) throw res.error;
-    if (!res.data) throw new Error('No attachment found for this record.');
-    return callDriveApi('downloadFile', { driveFileId: res.data.drive_file_id }).then(function (r) {
-      var bytes = atob(r.base64);
-      var ab = new ArrayBuffer(bytes.length);
-      var ia = new Uint8Array(ab);
-      for (var i = 0; i < bytes.length; i++) ia[i] = bytes.charCodeAt(i);
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([ab], { type: res.data.mime_type }));
-      a.download = res.data.file_name; a.click();
-    });
+  callApi('getFileForDownload', { rowNum: rowNum }).then(function (r) {
+    var bytes = atob(r.base64);
+    var ab = new ArrayBuffer(bytes.length);
+    var ia = new Uint8Array(ab);
+    for (var i = 0; i < bytes.length; i++) ia[i] = bytes.charCodeAt(i);
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([ab], { type: r.mimeType }));
+    a.download = r.fileName; a.click();
   }).catch(function (e) { showToast('Download failed: ' + e.message, true); });
 }
 
-function delReport(id) {
+function delReport(rowNum) {
   if (!confirm('Move this record to trash?')) return;
-  sb.rpc('soft_delete_dispatch', { p_id: id }).then(function (res) {
-    if (res.error) throw res.error;
-    showToast('Record moved to trash.'); loadReports(); loadStats();
+  callApi('deleteDispatchRecord', { rowNum: rowNum }).then(function (r) {
+    showToast(r.message); loadReports(); loadStats();
   }).catch(function (e) { showToast('Error: ' + e.message, true); });
 }
 
@@ -1336,18 +1241,9 @@ function toggleDeleted(show) {
   if (!show) { el.style.display = 'none'; return; }
   el.style.display = '';
   el.innerHTML = '<span class="spin-sm"></span> Loading deleted records...';
-  sb.from('dispatch_records')
-    .select('id, dispatch_no, report_date, deleted_at, dispatch_offices(office_name)')
-    .not('deleted_at', 'is', null)
-    .order('deleted_at', { ascending: false })
-    .then(function (res) {
-      if (res.error) throw res.error;
-      var records = (res.data || []).map(function (r) {
-        var officeNames = (r.dispatch_offices || []).map(function (x) { return x.office_name; }).filter(Boolean);
-        return { id: r.id, dispatchNo: r.dispatch_no, reportDate: r.report_date, selectOffice: officeNames.join(', '), deletedDate: r.deleted_at ? r.deleted_at.slice(0, 10) : '' };
-      });
-      _renderDeleted(records);
-    }).catch(function (e) { el.innerHTML = '<div class="alert a-err">Error: ' + e.message + '</div>'; });
+  callApi('getDeletedReports').then(function (r) {
+    _renderDeleted(r.records || []);
+  }).catch(function (e) { el.innerHTML = '<div class="alert a-err">Error: ' + e.message + '</div>'; });
 }
 
 function _renderDeleted(data) {
@@ -1361,18 +1257,16 @@ function _renderDeleted(data) {
   data.forEach(function (r) {
     h += '<tr><td>' + (r.reportDate || '') + '</td><td>' + esc(r.dispatchNo) + '</td><td>' + esc(r.selectOffice) + '</td>' +
       '<td>' + (r.deletedDate || '') + '</td>' +
-      '<td><button class="act-btn ab-rest" onclick="restoreRec(\'' + r.id + '\')">↩ Restore</button></td></tr>';
+      '<td><button class="act-btn ab-rest" onclick="restoreRec(' + r.rowNum + ')">↩ Restore</button></td></tr>';
   });
   el.innerHTML = h + '</tbody></table></div>';
 }
 
-function restoreRec(id) {
+function restoreRec(rowNum) {
   if (!confirm('Restore this record?')) return;
-  sb.rpc('restore_dispatch', { p_id: id })
-    .then(function (res) {
-      if (res.error) throw res.error;
-      showToast('Record restored.'); toggleDeleted(true); loadStats();
-    }).catch(function (e) { showToast('Error: ' + e.message, true); });
+  callApi('restoreDispatchRecord', { rowNum: rowNum }).then(function (r) {
+    showToast(r.message); toggleDeleted(true); loadStats();
+  }).catch(function (e) { showToast('Error: ' + e.message, true); });
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1384,7 +1278,8 @@ function _renderContactsGrid(contacts) {
   var h = '';
   contacts.forEach(function (c) {
     var emails = [c.emailOffice, c.emailPersonal].filter(Boolean).join(', ');
-    h += '<div class="contact-card" onclick="openContactModal(\'edit\',\'' + c.officeId + '\')">' +
+    var safe   = c.officeName.replace(/'/g, "\\'");
+    h += '<div class="contact-card" onclick="openContactModal(\'edit\',\'' + safe + '\')">' +
       '<div class="cc-name">' + esc(c.officeName) + '</div>' +
       (c.officerName ? '<div class="cc-officer"><i class="fas fa-user" style="margin-right:4px;color:var(--sub);"></i>' + esc(c.officerName) + '</div>' : '') +
       (emails ? '<div class="cc-email"><i class="fas fa-envelope" style="margin-right:4px;"></i>' + esc(emails) + '</div>' : '') +
@@ -1394,27 +1289,28 @@ function _renderContactsGrid(contacts) {
   el.innerHTML = h;
 }
 
-function openContactModal(mode, officeId) {
+function openContactModal(mode, officeName) {
   document.getElementById('cMode').value = mode;
-  document.getElementById('cOldName').value = '';   // now holds the office UUID for edit mode, not a name
+  document.getElementById('cOldName').value = '';
   ['cName','cOfficer','cEmailOffice','cEmailPersonal','cCell'].forEach(function (id) {
     document.getElementById(id).value = '';
   });
   document.getElementById('delContactBtn').style.display  = 'none';
   document.getElementById('contactModalTitle').textContent = mode === 'add' ? 'Add Contact' : 'Edit Contact';
 
-  if (mode === 'edit' && officeId) {
-    // Resolved from the already-loaded cache — no extra round-trip needed.
-    var c = _allContacts.find(function (x) { return x.officeId === officeId; });
-    if (!c) { showToast('Contact not found.', true); return; }
-    document.getElementById('cMode').value          = 'edit';
-    document.getElementById('cOldName').value       = c.officeId;
-    document.getElementById('cName').value          = c.officeName;
-    document.getElementById('cOfficer').value       = c.officerName    || '';
-    document.getElementById('cEmailOffice').value   = c.emailOffice    || '';
-    document.getElementById('cEmailPersonal').value = c.emailPersonal  || '';
-    document.getElementById('cCell').value          = c.cellNo         || '';
-    document.getElementById('delContactBtn').style.display = '';
+  if (mode === 'edit' && officeName) {
+    callApi('getContactDetails', { officeName: officeName }).then(function (r) {
+      var c = r.contact;
+      if (!c) { showToast('Contact not found.', true); return; }
+      document.getElementById('cMode').value          = 'edit';
+      document.getElementById('cOldName').value       = c.officeName;
+      document.getElementById('cName').value          = c.officeName;
+      document.getElementById('cOfficer').value       = c.officerName    || '';
+      document.getElementById('cEmailOffice').value   = c.emailOffice    || '';
+      document.getElementById('cEmailPersonal').value = c.emailPersonal  || '';
+      document.getElementById('cCell').value          = c.cellNo         || '';
+      document.getElementById('delContactBtn').style.display = '';
+    }).catch(function (e) { showToast('Error: ' + e.message, true); });
   }
   openModal('contactModal');
 }
@@ -1423,31 +1319,24 @@ function submitContact() {
   var name = document.getElementById('cName').value.trim();
   if (!name) { showToast('Office Name is required.', true); return; }
   var mode = document.getElementById('cMode').value;
-  var contactFields = {
-    office_name:    name,
-    officer_name:   document.getElementById('cOfficer').value.trim(),
-    email_office:   document.getElementById('cEmailOffice').value.trim(),
-    email_personal: document.getElementById('cEmailPersonal').value.trim(),
-    cell_no:        document.getElementById('cCell').value.trim()
+  var data = {
+    officeName:    name,
+    officerName:   document.getElementById('cOfficer').value.trim(),
+    emailOffice:   document.getElementById('cEmailOffice').value.trim(),
+    emailPersonal: document.getElementById('cEmailPersonal').value.trim(),
+    cellNo:        document.getElementById('cCell').value.trim()
   };
-
-  var op = (mode === 'edit')
-    ? sb.from('contacts').update(contactFields).eq('id', document.getElementById('cOldName').value)
-    : sb.from('contacts').insert(contactFields);
-
-  op.then(function (res) {
-    if (res.error) throw res.error;
-    showToast('Contact saved.'); closeModal('contactModal'); loadMasterData();
+  if (mode === 'edit') data.originalOfficeName = document.getElementById('cOldName').value;
+  callApi('saveContact', { contactData: data, mode: mode }).then(function (r) {
+    showToast(r.message); closeModal('contactModal'); loadMasterData();
   }).catch(function (e) { showToast('Error: ' + e.message, true); });
 }
 
 function removeContact() {
-  var contactId = document.getElementById('cOldName').value;
-  var name      = document.getElementById('cName').value;
-  if (!contactId || !confirm('Delete contact: ' + name + '?')) return;
-  sb.from('contacts').delete().eq('id', contactId).then(function (res) {
-    if (res.error) throw res.error;
-    showToast('Contact deleted.'); closeModal('contactModal'); loadMasterData();
+  var name = document.getElementById('cName').value;
+  if (!name || !confirm('Delete contact: ' + name + '?')) return;
+  callApi('deleteContact', { officeName: name }).then(function (r) {
+    showToast(r.message); closeModal('contactModal'); loadMasterData();
   }).catch(function (e) { showToast('Error: ' + e.message, true); });
 }
 
