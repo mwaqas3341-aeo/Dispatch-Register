@@ -12,6 +12,9 @@
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
+  <!-- Client-side attachment compression (images + light PDF re-save) -->
+  <script src="compression.js"></script>
+
   <style>
     /* ═══════════════════════════════════════════
        DESIGN TOKENS
@@ -246,6 +249,22 @@
     .file-zone-text { font-size: .82rem; color: var(--sub); }
     .file-zone-text strong { color: var(--navy2); }
     .file-selected { font-size: .8rem; color: var(--green); font-weight: 700; margin-top: 6px; display: none; }
+
+    /* Compression progress + stats */
+    .cmp-box { display: none; margin-top: 10px; text-align: left; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
+    .cmp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .cmp-label { font-size: .78rem; font-weight: 700; color: var(--txt); display: flex; align-items: center; gap: 6px; }
+    .cmp-label .spin-sm { display: inline-block; }
+    .cmp-pct { font-size: .74rem; font-weight: 800; color: var(--navy2); font-variant-numeric: tabular-nums; }
+    .cmp-track { width: 100%; height: 7px; border-radius: 6px; background: var(--border); overflow: hidden; }
+    .cmp-bar { height: 100%; width: 0%; border-radius: 6px; background: linear-gradient(90deg, var(--navy2), var(--gold2)); transition: width .25s ease; }
+    .cmp-status { font-size: .74rem; color: var(--sub); margin-top: 6px; }
+    .cmp-stats { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+    .cmp-stat-line { display: flex; justify-content: space-between; font-size: .78rem; padding: 2px 0; color: var(--sub); }
+    .cmp-stat-line b { color: var(--txt); font-weight: 700; }
+    .cmp-stat-line.cmp-saved b { color: var(--green); }
+    .cmp-stat-line.cmp-done .cmp-status-ok { color: var(--green); font-weight: 800; }
+    .cmp-stat-line.cmp-done .cmp-status-warn { color: var(--sub); font-weight: 700; }
 
     .btn-primary-custom { background: linear-gradient(135deg, var(--navy), var(--navy2)); color: #fff; border: none; padding: 13px 24px; font-weight: 800; border-radius: var(--radius-sm); font-size: .92rem; width: 100%; cursor: pointer; font-family: inherit; letter-spacing: .4px; transition: opacity .2s, transform .15s, box-shadow .2s; box-shadow: 0 4px 14px rgba(0,31,91,.25); }
     .btn-primary-custom:hover    { opacity: .88; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,31,91,.3); }
@@ -518,6 +537,22 @@
             <div class="file-zone-icon"><i class="fas fa-cloud-arrow-up"></i></div>
             <div class="file-zone-text"><strong>Tap to upload</strong> or drag &amp; drop<br>PDF, Images, Word, Excel</div>
             <div class="file-selected" id="fileSelected"></div>
+
+            <div class="cmp-box" id="cmpBox" onclick="event.stopPropagation()">
+              <div class="cmp-row">
+                <span class="cmp-label"><span class="spin-sm" id="cmpSpin"></span> <span id="cmpLabel">Compressing attachment...</span></span>
+                <span class="cmp-pct" id="cmpPct">0%</span>
+              </div>
+              <div class="cmp-track"><div class="cmp-bar" id="cmpBar"></div></div>
+              <div class="cmp-status" id="cmpStatusMsg"></div>
+
+              <div class="cmp-stats" id="cmpStats">
+                <div class="cmp-stat-line"><span>Original</span><b id="cmpOriginal">—</b></div>
+                <div class="cmp-stat-line"><span>Compressed</span><b id="cmpFinal">—</b></div>
+                <div class="cmp-stat-line cmp-saved"><span>Saved</span><b id="cmpSaved">—</b></div>
+                <div class="cmp-stat-line cmp-done"><span>Status</span><b id="cmpFinalStatus">—</b></div>
+              </div>
+            </div>
           </div>
 
           <button type="button" id="submitBtn" class="btn-primary-custom mt-3" onclick="submitDispatch()">
@@ -645,6 +680,7 @@ var _allContacts    = [];
 var _lastReportData = [];
 var _refreshTimer   = null;
 var _pendingFile    = null;
+var _compressing    = false;
 
 /* ═══════════════════════════════════════════════════
    CORE API BRIDGE
@@ -1053,16 +1089,80 @@ function fetchSchoolByEMIS() {
 /* ═══════════════════════════════════════════════════
    FILE HANDLING
 ═══════════════════════════════════════════════════ */
+function _cmpReset() {
+  document.getElementById('cmpBox').style.display   = 'none';
+  document.getElementById('cmpStats').style.display  = 'none';
+  document.getElementById('cmpBar').style.width      = '0%';
+  document.getElementById('cmpPct').textContent      = '0%';
+  document.getElementById('cmpStatusMsg').textContent = '';
+  document.getElementById('cmpLabel').textContent    = 'Compressing attachment...';
+  document.getElementById('cmpSpin').className       = 'spin-sm';
+}
+
 function handleFileSelect(input) {
   var f  = input.files ? input.files[0] : null;
   var el = document.getElementById('fileSelected');
-  if (f) {
-    _pendingFile = f;
-    el.textContent  = '📎 ' + f.name + ' (' + (f.size / 1024).toFixed(1) + ' KB)';
-    el.style.display = 'block';
-  } else {
-    _pendingFile = null; el.style.display = 'none';
+
+  if (!f) {
+    _pendingFile = null; _compressing = false;
+    el.style.display = 'none';
+    _cmpReset();
+    return;
   }
+
+  el.textContent   = '📎 ' + f.name + ' (' + (f.size / 1024).toFixed(1) + ' KB)';
+  el.style.display = 'block';
+
+  if (typeof DRCompress === 'undefined') {
+    // Compression module failed to load — safe fallback: use original file.
+    _pendingFile = f; _compressing = false;
+    return;
+  }
+
+  _pendingFile  = f;      // safe default while compression runs
+  _compressing  = true;
+
+  _cmpReset();
+  var box = document.getElementById('cmpBox');
+  var bar = document.getElementById('cmpBar');
+  var pct = document.getElementById('cmpPct');
+  var msg = document.getElementById('cmpStatusMsg');
+  box.style.display = 'block';
+
+  DRCompress.compressFile(f, function (p, statusMsg) {
+    bar.style.width  = p + '%';
+    pct.textContent  = p + '%';
+    msg.textContent  = statusMsg || '';
+  }).then(function (result) {
+    // Guard: if the user picked a different/new file while this one was
+    // still compressing, don't let a stale result overwrite it.
+    if (input.files && input.files[0] && input.files[0] !== f) return;
+
+    _pendingFile  = result.file;
+    _compressing  = false;
+
+    document.getElementById('cmpSpin').className   = '';
+    document.getElementById('cmpLabel').textContent = result.report.didCompress ? 'Compression complete' : 'Compression check complete';
+
+    el.textContent = '📎 ' + result.file.name + ' (' + (result.file.size / 1024).toFixed(1) + ' KB)';
+
+    document.getElementById('cmpOriginal').textContent    = result.report.originalSizeH;
+    document.getElementById('cmpFinal').textContent       = result.report.finalSizeH;
+    document.getElementById('cmpSaved').textContent       = result.report.didCompress
+      ? result.report.savedBytesH + ' (' + result.report.percent + '%)'
+      : '0 KB (0%)';
+    var statusEl = document.getElementById('cmpFinalStatus');
+    statusEl.textContent = result.report.statusText;
+    statusEl.className   = result.report.didCompress ? 'cmp-status-ok' : 'cmp-status-warn';
+
+    document.getElementById('cmpStats').style.display = 'block';
+  }).catch(function () {
+    // Should never happen (DRCompress.compressFile never rejects), but
+    // guarantee the original file is still usable either way.
+    _pendingFile  = f;
+    _compressing  = false;
+    box.style.display = 'none';
+  });
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1085,6 +1185,7 @@ function submitDispatch() {
   if (t === emisTy && emis.length !== 8)                    { showToast('Enter a valid 8-digit EMIS code.', true); return; }
   if (t && t !== emisTy && !sname)                          { showToast('Please enter the school name.', true); return; }
   if (!document.getElementById('fDescription').value.trim()) { showToast('Description is required.', true); return; }
+  if (_compressing) { showToast('Please wait — compressing attachment...', true); return; }
 
   var btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -1146,6 +1247,8 @@ function _resetDispatchForm() {
   document.getElementById('otherOfficeWrap').style.display    = 'none';
   document.getElementById('fileInput').value                  = '';
   document.getElementById('fileSelected').style.display       = 'none';
+  _compressing = false;
+  _cmpReset();
   document.getElementById('emailNotice').style.display        = 'none';
   document.getElementById('noEmailNotice').style.display      = 'none';
   document.getElementById('emisWrap').style.display           = 'none';
