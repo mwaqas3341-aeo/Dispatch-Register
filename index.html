@@ -11,6 +11,7 @@
 
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
   <!-- Client-side attachment compression (images + light PDF re-save) -->
   <script src="compression.js"></script>
@@ -345,6 +346,12 @@
       .dispatch-badge .dn-num { font-size: 1.4rem; }
       .card-head h3 { font-size: .92rem; }
     }
+    .setup-box input.sin { width:100%; padding:12px 14px; margin-top:10px; border-radius:10px; font-size:1rem;
+      border:1px solid rgba(255,255,255,.28); background:rgba(255,255,255,.1); color:#fff; outline:none; }
+    .setup-box input.sin::placeholder { color:rgba(255,255,255,.55); }
+    .setup-box input.sin:focus { border-color:#f5c542; }
+    .setup-msg { color:#ffb4a8; font-size:.85rem; margin-top:10px; min-height:18px; }
+    .setup-link { color:rgba(255,255,255,.7); font-size:.82rem; margin-top:12px; cursor:pointer; text-decoration:underline; display:inline-block; }
   </style>
 </head>
 <body>
@@ -355,59 +362,57 @@
 <div id="setupOverlay">
   <div class="setup-box">
 
-    <!-- s-signin: Google Sign-In screen -->
+    <!-- s-signin: CNIC login -->
     <div id="s-signin">
       <div class="setup-icon si-gold"><i class="fas fa-shield-halved"></i></div>
       <h2 id="setupOrgTitle">Dispatch Register</h2>
       <p class="sub" id="setupDeptName">Punjab School Education Department</p>
-      <p class="sub" style="margin-top:8px;">Sign in with your Google account to continue.</p>
-      <div class="perm-item" style="margin-top:16px;">
-        <span class="pi-icon"><i class="fas fa-lock"></i></span>
-        <span>Your data is stored privately. Only you can access your dispatch records.</span>
-      </div>
-      <div class="signin-divider">─────── Sign in to continue ───────</div>
-      <div id="googleSignInDiv"></div>
+      <p class="sub" style="margin-top:8px;">Sign in with your CNIC and password.</p>
+      <input class="sin" id="loginCnic" type="text" inputmode="numeric" maxlength="15" placeholder="CNIC (13 digits)" autocomplete="username">
+      <input class="sin" id="loginPw" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <div class="setup-msg" id="loginMsg"></div>
+      <button class="btn-allow" id="loginBtn" onclick="doLogin()"><i class="fas fa-sign-in-alt" style="margin-right:8px;"></i>Login</button>
+      <p class="sub" style="margin-top:12px;font-size:.78rem;">Accounts are created by the administrator.</p>
     </div>
 
-    <!-- s-checking: Verifying account -->
+    <!-- s-checking -->
     <div id="s-checking" style="display:none;">
       <div class="setup-icon si-gold"><i class="fas fa-shield-halved"></i></div>
-      <h2>Verifying Account</h2>
-      <p class="sub"><span class="spin-ring"></span> Checking your workspace...</p>
+      <h2>Please wait</h2>
+      <p class="sub"><span class="spin-ring"></span> Checking your account...</p>
     </div>
 
-    <!-- s-allow: New user — create workspace -->
-    <div id="s-allow" style="display:none;">
-      <div class="setup-icon si-gold"><i class="fas fa-rocket"></i></div>
-      <h2>Create Your Workspace</h2>
-      <p class="sub">Your private dispatch register spreadsheet will be created automatically.</p>
-      <div class="user-badge">
-        <i class="fas fa-user-circle" style="color:var(--gold);"></i>
-        <span id="userEmailDisplay">—</span>
-      </div>
-      <div class="perm-item">
-        <span class="pi-icon"><i class="fab fa-google-drive"></i></span>
-        <span><strong>Google Drive</strong> — private spreadsheet &amp; upload folder (managed by admin)</span>
-      </div>
-      <div class="perm-item">
-        <span class="pi-icon"><i class="fas fa-envelope"></i></span>
-        <span><strong>Email</strong> — dispatch notifications sent automatically</span>
-      </div>
-      <button class="btn-allow" id="allowBtn" onclick="runInitSetup()">
-        <i class="fas fa-check-circle" style="margin-right:8px;"></i>Create My Workspace
-      </button>
-      <p class="setup-progress" id="allowProgress"></p>
+    <!-- s-changepw -->
+    <div id="s-changepw" style="display:none;">
+      <div class="setup-icon si-gold"><i class="fas fa-key"></i></div>
+      <h2>Set a New Password</h2>
+      <p class="sub">Your first password was your CNIC. Choose a new one now (at least 8 characters, not only digits).</p>
+      <input class="sin" id="newPw" type="password" placeholder="New password" autocomplete="new-password">
+      <input class="sin" id="newPw2" type="password" placeholder="Repeat new password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doChangePassword()">
+      <div class="setup-msg" id="pwMsg"></div>
+      <button class="btn-allow" id="pwBtn" onclick="doChangePassword()"><i class="fas fa-check-circle" style="margin-right:8px;"></i>Save Password</button>
     </div>
 
-    <!-- s-deleted: Workspace deleted -->
-    <div id="s-deleted" style="display:none;">
-      <div class="setup-icon si-red"><i class="fas fa-trash-alt"></i></div>
-      <h2>Workspace Not Found</h2>
-      <p class="sub" style="color:#ffcca0;">Your spreadsheet was deleted or is inaccessible. Click below to create a new workspace.</p>
-      <button class="btn-allow" id="recreateBtn" onclick="runInitSetup()">
-        <i class="fas fa-redo" style="margin-right:8px;"></i>Create New Workspace
-      </button>
-      <p class="setup-progress" id="recreateProgress"></p>
+    <!-- s-gmail -->
+    <div id="s-gmail" style="display:none;">
+      <div class="setup-icon si-gold"><i class="fab fa-google"></i></div>
+      <h2>Your Gmail Address</h2>
+      <p class="sub">Enter your own Gmail. Your dispatch files will be saved in this account's Google Drive, not anyone else's.</p>
+      <input class="sin" id="gmailInput" type="email" placeholder="yourname@gmail.com" autocomplete="email" onkeydown="if(event.key==='Enter')doConfirmGmail()">
+      <div class="setup-msg" id="gmailMsg"></div>
+      <button class="btn-allow" id="gmailBtn" onclick="doConfirmGmail()"><i class="fas fa-check-circle" style="margin-right:8px;"></i>Confirm Gmail</button>
+    </div>
+
+    <!-- s-drive -->
+    <div id="s-drive" style="display:none;">
+      <div class="setup-icon si-gold"><i class="fab fa-google-drive"></i></div>
+      <h2>Allow Google Drive</h2>
+      <p class="sub">One-time permission so the app can save the files you attach.</p>
+      <div class="perm-item"><span class="pi-icon"><i class="fab fa-google-drive"></i></span>
+        <span><strong>Google Drive</strong> — the app can only see files and the folder it creates itself, never the rest of your Drive.</span></div>
+      <div class="setup-msg" id="driveMsg"></div>
+      <button class="btn-allow" id="driveBtn" onclick="doConnectDrive()"><i class="fas fa-link" style="margin-right:8px;"></i>Connect Google Drive</button>
+      <span class="setup-link" onclick="skipDrive()">Skip for now</span>
     </div>
 
     <!-- s-done: Ready -->
@@ -452,7 +457,8 @@
   <div class="desktop-tabnav">
     <button class="dt-btn active" onclick="switchTab('dispatch',this)"><i class="fas fa-paper-plane" style="margin-right:6px;"></i>New Dispatch</button>
     <button class="dt-btn" onclick="switchTab('reports',this)"><i class="fas fa-chart-bar" style="margin-right:6px;"></i>Reports</button>
-    <button class="dt-btn" onclick="switchTab('contacts',this)"><i class="fas fa-address-book" style="margin-right:6px;"></i>Contacts</button>
+    <button class="dt-btn" onclick="switchTab('contacts',this)"><i class="fas fa-address-book" style="margin-right:6px;"></i>Recipients</button>
+    <button class="dt-btn" id="adminTabBtn" style="display:none;" onclick="switchTab('admin',this)"><i class="fas fa-users-cog" style="margin-right:6px;"></i>Admin</button>
   </div>
 
   <div class="content">
@@ -592,8 +598,8 @@
     <div class="pane" id="pane-contacts">
       <div class="card">
         <div class="card-head">
-          <h3><i class="fas fa-address-book" style="margin-right:8px;"></i>Office Contacts</h3>
-          <p>Manage contacts for automatic email dispatch</p>
+          <h3><i class="fas fa-address-book" style="margin-right:8px;"></i>Recipients</h3>
+          <p>Offices you can send dispatches to. Visible to the users in the scope you choose.</p>
         </div>
         <div class="card-body">
           <button class="btn btn-ok mb-3" onclick="openContactModal('add')"><i class="fas fa-plus"></i> Add New Contact</button>
@@ -602,12 +608,41 @@
       </div>
     </div>
 
+    <!-- ADMIN TAB -->
+    <div class="pane" id="pane-admin">
+      <div class="card">
+        <div class="card-head">
+          <h3><i class="fas fa-user-plus" style="margin-right:8px;"></i>Create User</h3>
+          <p>The initial password is the user's CNIC. They must change it at first login.</p>
+        </div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-12"><label class="lbl">CNIC (13 digits) *</label><input type="text" id="aCnic" class="inp" inputmode="numeric" maxlength="15" placeholder="3220222787425"></div>
+            <div class="col-12"><label class="lbl">Full Name *</label><input type="text" id="aName" class="inp"></div>
+            <div class="col-6"><label class="lbl">Designation</label><input type="text" id="aDesig" class="inp" placeholder="e.g. AEO"></div>
+            <div class="col-6"><label class="lbl">Cell</label><input type="tel" id="aCell" class="inp"></div>
+            <div class="col-6"><label class="lbl">District *</label><input type="text" id="aDistrict" class="inp" placeholder="LAYYAH"></div>
+            <div class="col-6"><label class="lbl">Tehsil</label><input type="text" id="aTehsil" class="inp"></div>
+            <div class="col-6"><label class="lbl">Wing</label><select id="aWing" class="inp"><option value="">None</option><option>M-EE</option><option>W-EE</option><option>SE</option></select></div>
+            <div class="col-6"><label class="lbl">Markaz</label><input type="text" id="aMarkaz" class="inp"></div>
+          </div>
+          <button class="btn btn-ok mt-3" id="adminCreateBtn" onclick="createUser()"><i class="fas fa-user-plus"></i> Create User</button>
+          <div id="adminMsg" style="margin-top:10px;color:#c0392b;font-size:.85rem;min-height:18px;"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="card-head"><h3><i class="fas fa-users" style="margin-right:8px;"></i>Users</h3><p>Reset a password to the CNIC, or suspend / activate an account</p></div>
+        <div class="card-body"><div id="adminUsers"></div></div>
+      </div>
+    </div>
+
   </div><!-- /content -->
 
   <div class="bottom-nav">
     <button class="bn-btn active" onclick="switchTab('dispatch',this)"><i class="fas fa-paper-plane"></i>Dispatch</button>
     <button class="bn-btn" onclick="switchTab('reports',this)"><i class="fas fa-chart-bar"></i>Reports</button>
-    <button class="bn-btn" onclick="switchTab('contacts',this)"><i class="fas fa-address-book"></i>Contacts</button>
+    <button class="bn-btn" onclick="switchTab('contacts',this)"><i class="fas fa-address-book"></i>Recipients</button>
+    <button class="bn-btn" id="adminBnBtn" style="display:none;" onclick="switchTab('admin',this)"><i class="fas fa-users-cog"></i>Admin</button>
   </div>
 </div>
 
@@ -627,12 +662,13 @@
         <div class="col-12"><label class="lbl">Office Email</label><input type="email" id="cEmailOffice" class="inp" placeholder="office@example.com"></div>
         <div class="col-12"><label class="lbl">Personal Email</label><input type="email" id="cEmailPersonal" class="inp" placeholder="personal@gmail.com"></div>
         <div class="col-12"><label class="lbl">Cell Number</label><input type="tel" id="cCell" class="inp" placeholder="+92 300 0000000"></div>
+        <div class="col-12"><label class="lbl">Visible to</label><select id="cScope" class="inp"></select></div>
       </div>
     </div>
     <div class="modal-foot">
       <button id="delContactBtn" class="btn btn-red" style="display:none;margin-right:auto;" onclick="removeContact()"><i class="fas fa-trash"></i> Delete</button>
       <button class="btn btn-out" onclick="closeModal('contactModal')">Cancel</button>
-      <button class="btn btn-pr" onclick="submitContact()"><i class="fas fa-save"></i> Save</button>
+      <button class="btn btn-pr" id="saveContactBtn" onclick="submitContact()"><i class="fas fa-save"></i> Save</button>
     </div>
   </div>
 </div>
@@ -658,13 +694,19 @@
 /* ═══════════════════════════════════════════════════
    ★ CONFIGURATION — EDIT THESE TWO VALUES ★
 ═══════════════════════════════════════════════════ */
-var GAS_API_URL      = 'https://script.google.com/macros/s/AKfycbw3XvPj-bhbF7xF3HKZwvg3RntVyPsl9Gwcw3QnLheCuc33i2AzUlevgqzmLXEvj2_i6g/exec';
+var SUPABASE_URL     = 'https://btjtojkhiwemcnssdoih.supabase.co';
+var SUPABASE_KEY     = 'sb_publishable_nITbyRjd8sFmEqyo4oa5jA_ay4k2e7A';
 var GOOGLE_CLIENT_ID = '98478009111-segpk2092ubc0up0h4dne5fk2o8vhc2p.apps.googleusercontent.com';
+var DRIVE_SCOPE      = 'https://www.googleapis.com/auth/drive.file email';
+var DRIVE_FOLDER_NAME = 'Dispatch Register Files';
+var CNIC_DOMAIN      = '@dispatch.local';
+var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
 
 /* ═══════════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════════ */
-var _idToken     = '';
 var _adminConfig = {
   org_name:                 'Dispatch Register',
   department_name:          'Punjab School Education Department',
@@ -683,162 +725,417 @@ var _pendingFile    = null;
 var _compressing    = false;
 
 /* ═══════════════════════════════════════════════════
-   CORE API BRIDGE
-   Replaces all google.script.run calls.
-   Sends POST to GAS with body as text/plain → no CORS preflight.
+   BACKEND BRIDGE  (Supabase)
+   callApi(action, data) keeps the same names/shapes the UI always used.
 ═══════════════════════════════════════════════════ */
-function callApi(action, data) {
-  return fetch(GAS_API_URL, {
-    method: 'POST',
-    // DO NOT set Content-Type header. Leave it as text/plain
-    body: JSON.stringify({ token: _idToken, action: action, data: data || {} })
-  })
-  .then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  });
+var _profile = null, _driveConn = null, _driveToken = '', _driveTokenExp = 0;
+
+function fmtNo(n) { return String(n).padStart(4, '0'); }
+function fmtDMY(d) { if (!d) return ''; var p = String(d).split('-'); return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : d; }
+function _chk(r) { if (r.error) throw new Error(r.error.message || String(r.error)); return r.data; }
+function _fnResult(r) {
+  if (!r.error) { if (r.data && r.data.error) throw new Error(r.data.error); return r.data; }
+  var ctx = r.error.context;
+  if (ctx && typeof ctx.json === 'function') {
+    return ctx.json().then(function (j) { throw new Error(j && j.error ? j.error : r.error.message); },
+                           function () { throw new Error(r.error.message); });
+  }
+  throw new Error(r.error.message);
 }
 
-/* ═══════════════════════════════════════════════════
-   GOOGLE SIGN-IN (Identity Services)
-═══════════════════════════════════════════════════ */
+function _mapContact(c) {
+  return { id: c.id, officeName: c.office_name, officerName: c.officer_name || '', emailOffice: c.email_office || '',
+           emailPersonal: c.email_personal || '', cellNo: c.cell_no || '', scopeLevel: c.scope_level,
+           canEdit: !!_profile && (c.owner_id === _profile.id || _profile.role === 'admin') };
+}
+function _mapRecord(x, i) {
+  var offices = (x.dispatch_recipients || []).map(function (n) { return n.name_snapshot; });
+  if (!offices.length && x.other_office_name) offices.push(x.other_office_name);
+  var doc = (x.dispatch_documents || []).filter(function (d) { return d.status === 'active'; })[0];
+  return { rowNum: x.id, srNo: i + 1, isoDate: x.dispatch_date, reportDate: fmtDMY(x.dispatch_date),
+           dispatchNo: fmtNo(x.dispatch_no), selectOffice: offices.join(', '), category: x.category || '',
+           description: x.subject || '', remarks: x.remarks || '', emisCode: x.emis_code || '',
+           accusedName: x.concerned_person || '', schoolType: x.school_type || '', schoolName: x.school_name || '',
+           hasFile: !!doc, fileUrl: doc ? (doc.drive_web_view_link || doc.legacy_url || '') : '',
+           deletedDate: x.deleted_at ? new Date(x.deleted_at).toLocaleString('en-GB') : '' };
+}
+var REC_SELECT = 'id,dispatch_date,dispatch_no,category,subject,remarks,school_type,emis_code,school_name,' +
+  'concerned_person,other_office_name,deleted_at,dispatch_recipients(name_snapshot),' +
+  'dispatch_documents(id,drive_web_view_link,legacy_url,status)';
 
-window.onload = function () {
-  // Check stored token
-  var stored = sessionStorage.getItem('dr_token');
-  var exp    = parseInt(sessionStorage.getItem('dr_token_exp') || '0');
-  if (stored && Date.now() < exp) {
-    _idToken = stored;
-    showState('s-checking');
-    runCheckUserSetup();
-  } else {
-    showState('s-signin');
-    _initGoogleSignIn();
+var API = {
+  getAdminConfig: function () {
+    return sb.from('app_config').select('key,value').then(function (r) {
+      var o = {}; _chk(r).forEach(function (x) { o[x.key] = x.value; }); return o;
+    });
+  },
+  getNextDispatchNo: function (d) {
+    return sb.rpc('fn_next_dispatch_no', { p_date: d.year + '-01-01' }).then(function (r) { return { value: _chk(r) }; });
+  },
+  getEmailsForOffices: function () { return Promise.resolve({ emails: [] }); },
+  getDashboardStats: function () {
+    var n = new Date(), ms = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-01';
+    return Promise.all([
+      sb.from('dispatch_register').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      sb.from('dispatch_register').select('id', { count: 'exact', head: true }).eq('status', 'active').gte('dispatch_date', ms),
+      sb.from('dispatch_register').select('id', { count: 'exact', head: true }).eq('status', 'deleted'),
+      sb.from('dispatch_recipients').select('name_snapshot,dispatch_register!inner(status)').eq('dispatch_register.status', 'active').limit(5000)
+    ]).then(function (rs) {
+      var names = {}; (rs[3].data || []).forEach(function (x) { names[String(x.name_snapshot).toLowerCase()] = 1; });
+      return { total: rs[0].count || 0, thisMonth: rs[1].count || 0, deleted: rs[2].count || 0, offices: Object.keys(names).length };
+    });
+  },
+  getAllContacts: function () {
+    return sb.from('recipients').select('*').eq('is_active', true).order('office_name').then(function (r) {
+      return { contacts: _chk(r).map(_mapContact) };
+    });
+  },
+  saveContact: function (d) {
+    var c = d.contactData, scope = c.scopeLevel || 'district';
+    if (d.mode === 'edit') {
+      return sb.from('recipients').update({ office_name: c.officeName, officer_name: c.officerName || null,
+        email_office: c.emailOffice || null, email_personal: c.emailPersonal || null, cell_no: c.cellNo || null })
+        .eq('id', c.id).select('id').then(function (r) {
+          if (r.error) throw new Error(r.error.code === '23505' ? 'This office already exists in that scope.' : r.error.message);
+          if (!r.data || !r.data.length) throw new Error('You can only edit recipients you added.');
+          return { message: 'Contact updated successfully.' };
+        });
+    }
+    if (scope !== 'district' && !_profile.tehsil) return Promise.reject(new Error('Your profile has no tehsil. Ask the administrator to set it.'));
+    if (scope === 'wing' && !_profile.wing) return Promise.reject(new Error('Your profile has no wing. Ask the administrator to set it.'));
+    return sb.from('recipients').insert({ owner_id: _profile.id, office_name: c.officeName, officer_name: c.officerName || null,
+      email_office: c.emailOffice || null, email_personal: c.emailPersonal || null, cell_no: c.cellNo || null,
+      scope_level: scope, district: _profile.district,
+      tehsil: scope === 'district' ? null : _profile.tehsil, wing: scope === 'wing' ? _profile.wing : null
+    }).then(function (r) {
+      if (r.error) throw new Error(r.error.code === '23505' ? 'This office already exists in that scope.' : r.error.message);
+      return { message: 'Contact added successfully.' };
+    });
+  },
+  deleteContact: function (d) {
+    return sb.from('recipients').update({ is_active: false }).eq('id', d.id).select('id').then(function (r) {
+      if (r.error) throw new Error(r.error.message);
+      if (!r.data || !r.data.length) throw new Error('You can only remove recipients you added.');
+      return { message: 'Contact removed.' };
+    });
+  },
+  processForm: function (d) {
+    var f = d.formData;
+    var offices = (f.selectedOffices || []).map(function (n) {
+      var c = _allContacts.find(function (x) { return x.officeName === n; });
+      return { recipient_id: c ? c.id : null, name: n, is_other: false };
+    });
+    if (f.otherOfficeName) offices.push({ recipient_id: null, name: f.otherOfficeName, is_other: true });
+    return sb.rpc('fn_create_dispatch', { p_date: f.reportDate, p_category: f.category, p_subject: f.description,
+      p_remarks: f.remarks, p_school_type: f.schoolType, p_emis: f.emisCode, p_school_name: f.schoolName,
+      p_concerned: f.accusedName, p_other_office: f.otherOfficeName, p_recipients: offices
+    }).then(function (r) {
+      if (r.error) return { success: false, error: r.error.message };
+      var row = r.data, msg = 'Dispatch #' + fmtNo(row.dispatch_no) + ' saved';
+      if (!f.fileObj) return { success: true, message: msg + '.' };
+      return uploadToDrive(f.fileObj, row)
+        .then(function () { return { success: true, message: msg + ' with attachment.' }; })
+        .catch(function (e) { return { success: true, message: msg + ', but the attachment was NOT uploaded (' + e.message + '). Use the paperclip in Reports to retry.' }; });
+    });
+  },
+  getFilteredReports: function (d) {
+    var f = d.filters || {};
+    var q = sb.from('dispatch_register').select(REC_SELECT).eq('status', 'active')
+      .order('dispatch_date', { ascending: false }).order('dispatch_no', { ascending: false }).limit(2000);
+    if (f.fromDate) q = q.gte('dispatch_date', f.fromDate);
+    if (f.toDate) q = q.lte('dispatch_date', f.toDate);
+    return q.then(function (r) {
+      var rows = _chk(r).map(_mapRecord);
+      var off = (f.office || '').toLowerCase(), kw = (f.keyword || '').toLowerCase();
+      if (off && off !== 'other') rows = rows.filter(function (x) { return x.selectOffice.toLowerCase().indexOf(off) !== -1; });
+      if (kw) rows = rows.filter(function (x) {
+        return [x.selectOffice, x.category, x.description, x.accusedName].join(' ').toLowerCase().indexOf(kw) !== -1;
+      });
+      rows.forEach(function (x, i) { x.srNo = i + 1; });
+      return { records: rows };
+    });
+  },
+  deleteDispatchRecord: function (d) {
+    return sb.rpc('fn_delete_dispatch', { p_id: d.rowNum }).then(function (r) { _chk(r); return { message: 'Record moved to Deleted.' }; });
+  },
+  getDeletedReports: function () {
+    return sb.from('dispatch_register').select(REC_SELECT).eq('status', 'deleted').order('deleted_at', { ascending: false })
+      .then(function (r) { return { records: _chk(r).map(_mapRecord) }; });
+  },
+  restoreDispatchRecord: function (d) {
+    return sb.rpc('fn_restore_dispatch', { p_id: d.rowNum }).then(function (r) { _chk(r); return { message: 'Record restored.' }; });
+  },
+  getSchoolNameByEMIS: function (d) {
+    return sb.from('schools').select('name').eq('emis_code', d.emisCode).maybeSingle().then(function (r) {
+      return { name: r.data ? r.data.name : null };
+    });
   }
 };
 
-function _initGoogleSignIn() {
-  // Wait for GSI script to load
-  if (typeof google === 'undefined' || !google.accounts) {
-    setTimeout(_initGoogleSignIn, 200);
-    return;
-  }
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: _onSignIn,
-    auto_select: true,
-    cancel_on_tap_outside: false
-  });
-  google.accounts.id.renderButton(
-    document.getElementById('googleSignInDiv'),
-    { theme: 'outline', size: 'large', width: 280, text: 'signin_with' }
-  );
-  google.accounts.id.prompt(); // One Tap
-}
-
-function _onSignIn(response) {
-  _idToken = response.credential;
-  // Store token (expires ~1 hour, we store for 55 min)
-  sessionStorage.setItem('dr_token', _idToken);
-  sessionStorage.setItem('dr_token_exp', String(Date.now() + 55 * 60 * 1000));
-
-  // Extract email from JWT payload (no crypto verify needed — GAS validates on each call)
-  var email = _jwtEmail(_idToken);
-  document.getElementById('userEmailDisplay').textContent = email || 'your account';
-
-  showState('s-checking');
-  runCheckUserSetup();
-}
-
-function _jwtEmail(token) {
-  try {
-    var parts   = token.split('.');
-    var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return payload.email || '';
-  } catch (e) { return ''; }
-}
-
-function _handleSessionExpired() {
-  sessionStorage.removeItem('dr_token');
-  sessionStorage.removeItem('dr_token_exp');
-  _idToken = '';
-  document.getElementById('mainApp').style.display    = 'none';
-  document.getElementById('setupOverlay').style.display = 'flex';
-  showState('s-signin');
-  _initGoogleSignIn();
-}
-
-function signOut() {
-  if (!confirm('Sign out of Dispatch Register?')) return;
-  sessionStorage.removeItem('dr_token');
-  sessionStorage.removeItem('dr_token_exp');
-  _idToken = '';
-  stopAutoRefresh();
-  if (typeof google !== 'undefined' && google.accounts) {
-    google.accounts.id.disableAutoSelect();
-  }
-  document.getElementById('mainApp').style.display    = 'none';
-  document.getElementById('setupOverlay').style.display = 'flex';
-  showState('s-signin');
-  _initGoogleSignIn();
+function callApi(action, data) {
+  var fn = API[action];
+  if (!fn) return Promise.reject(new Error('Unknown action: ' + action));
+  return Promise.resolve().then(function () { return fn(data || {}); });
 }
 
 /* ═══════════════════════════════════════════════════
-   SETUP FLOW
+   GOOGLE DRIVE  (each user's own Drive, short-lived browser token)
 ═══════════════════════════════════════════════════ */
-
-function runCheckUserSetup() {
-  callApi('checkUserSetup').then(function(r) {
-    onSetupResult(r);
-  }).catch(function(err) {
-    console.error('checkUserSetup failed:', err);
-    // API unreachable or token rejected — back to sign-in
-    showState('s-signin');
-    _initGoogleSignIn();
-  });
-}
-
-function onSetupResult(r) {
-  if (r.status === 'READY') {
-    showState('s-done');
-    setTimeout(function () { bootApp(r.email); }, 1200);
-    return;
-  }
-  if (r.status === 'SHEET_DELETED') { showState('s-deleted'); return; }
-  // NEW_USER
-  document.getElementById('userEmailDisplay').textContent = r.email || _jwtEmail(_idToken);
-  showState('s-allow');
-}
-
-function runInitSetup() {
-  var isAllow = document.getElementById('s-allow').style.display !== 'none';
-  var progId  = isAllow ? 'allowProgress' : 'recreateProgress';
-  var btn     = document.getElementById(isAllow ? 'allowBtn' : 'recreateBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin-ring"></span> Setting up your workspace...';
-  document.getElementById(progId).textContent = 'Creating spreadsheet and folder...';
-
-  callApi('initializeUserSystem').then(function(r) {
-    if (r.success) {
-      showState('s-done');
-      var email = _jwtEmail(_idToken);
-      setTimeout(function () { bootApp(email); }, 1400);
-    } else {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-redo" style="margin-right:8px;"></i>Retry';
-      document.getElementById(progId).textContent = 'Error: ' + r.error;
+function ensureDriveToken() {
+  if (_driveToken && Date.now() < _driveTokenExp - 60000) return Promise.resolve(_driveToken);
+  return new Promise(function (resolve, reject) {
+    if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+      return reject(new Error('Google services did not load. Check your connection and try again.'));
     }
-  }).catch(function(err) {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-redo" style="margin-right:8px;"></i>Retry';
-    document.getElementById(progId).textContent = 'Error: ' + err.message;
+    var tc = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID, scope: DRIVE_SCOPE, hint: _profile.gmail_address,
+      callback: function (resp) {
+        if (resp.error) return reject(new Error(resp.error === 'access_denied' ? 'Permission was not granted.' : 'Google sign-in failed (' + resp.error + ').'));
+        fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + resp.access_token } })
+          .then(function (r) { return r.json(); })
+          .then(function (u) {
+            if (!u.email || u.email.toLowerCase() !== _profile.gmail_address) {
+              try { google.accounts.oauth2.revoke(resp.access_token, function () {}); } catch (e) {}
+              return reject(new Error('Please choose the Google account ' + _profile.gmail_address + '.'));
+            }
+            _driveToken = resp.access_token;
+            _driveTokenExp = Date.now() + (resp.expires_in || 3600) * 1000;
+            resolve(_driveToken);
+          }).catch(function () { reject(new Error('Could not verify your Google account.')); });
+      },
+      error_callback: function (e) {
+        reject(new Error(e && e.type === 'popup_failed_to_open' ? 'Your browser blocked the Google window. Allow pop-ups and try again.'
+          : e && e.type === 'popup_closed' ? 'The Google window was closed.' : 'Google sign-in failed.'));
+      }
+    });
+    tc.requestAccessToken({ prompt: '' });
   });
 }
 
+function _gj(res) {
+  if (res.status === 401) _driveToken = '';
+  if (!res.ok) throw new Error('Google Drive error (' + res.status + ')');
+  return res.json();
+}
+
+function ensureFolder() {
+  var auth = { headers: { Authorization: 'Bearer ' + _driveToken } };
+  function done(id) {
+    if (!_driveConn || _driveConn.status !== 'connected' || _driveConn.app_folder_id !== id) {
+      return sb.rpc('fn_drive_connected', { p_google_email: _profile.gmail_address, p_folder_id: id, p_scopes: ['drive.file', 'email'] })
+        .then(function (r) { _chk(r); _driveConn = { status: 'connected', app_folder_id: id }; return id; });
+    }
+    return id;
+  }
+  function find() {
+    var q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and name='" + DRIVE_FOLDER_NAME + "' and trashed=false");
+    return fetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&pageSize=1', auth).then(_gj)
+      .then(function (r) { return r.files && r.files[0] ? r.files[0].id : null; });
+  }
+  function create() {
+    return fetch('https://www.googleapis.com/drive/v3/files?fields=id', { method: 'POST',
+      headers: { Authorization: 'Bearer ' + _driveToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }) })
+      .then(_gj).then(function (r) { return r.id; });
+  }
+  var known = _driveConn && _driveConn.app_folder_id;
+  var check = known
+    ? fetch('https://www.googleapis.com/drive/v3/files/' + known + '?fields=id,trashed', auth)
+        .then(function (r) { return r.ok ? r.json() : null; }).then(function (f) { return f && !f.trashed ? f.id : null; })
+    : Promise.resolve(null);
+  return check.then(function (id) { return id || find(); })
+              .then(function (id) { return id || create(); })
+              .then(done);
+}
+
+function uploadToDrive(file, row) {
+  return ensureDriveToken().then(ensureFolder).then(function (folderId) {
+    var meta = { name: fmtNo(row.dispatch_no) + '_' + row.dispatch_date + '_' + file.name, parents: [folderId] };
+    var b = 'drb' + Date.now();
+    var body = new Blob(['--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) +
+      '\r\n--' + b + '\r\nContent-Type: ' + (file.type || 'application/octet-stream') + '\r\n\r\n', file, '\r\n--' + b + '--']);
+    return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType,webViewLink',
+      { method: 'POST', headers: { Authorization: 'Bearer ' + _driveToken, 'Content-Type': 'multipart/related; boundary=' + b }, body: body });
+  }).then(_gj).then(function (f) {
+    return sb.from('dispatch_documents').insert({ dispatch_id: row.id, user_id: _profile.id, file_name: file.name,
+      mime_type: f.mimeType || file.type, file_size: file.size, drive_file_id: f.id, drive_web_view_link: f.webViewLink })
+      .then(function (r) { _chk(r); });
+  });
+}
+
+function attachFile(id) {
+  var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
+  if (!rec) return;
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*,.pdf,.doc,.docx,.xlsx,.xls';
+  inp.onchange = function () {
+    var f = inp.files[0]; if (!f) return;
+    showToast('Uploading to your Google Drive...');
+    uploadToDrive(f, { id: rec.rowNum, dispatch_no: parseInt(rec.dispatchNo, 10), dispatch_date: rec.isoDate })
+      .then(function () { showToast('File attached.'); loadReports(); })
+      .catch(function (e) { showToast('Upload failed: ' + e.message, true); });
+  };
+  inp.click();
+}
+
+/* ═══════════════════════════════════════════════════
+   LOGIN (CNIC + password) AND FIRST-LOGIN STEPS
+═══════════════════════════════════════════════════ */
 function showState(id) {
-  ['s-signin','s-checking','s-allow','s-deleted','s-done'].forEach(function (s) {
+  ['s-signin', 's-checking', 's-changepw', 's-gmail', 's-drive', 's-done'].forEach(function (s) {
     document.getElementById(s).style.display = s === id ? '' : 'none';
   });
+}
+function _msg(id, text) { var el = document.getElementById(id); if (el) el.textContent = text || ''; }
+function _busy(btnId, on, label) {
+  var b = document.getElementById(btnId); if (!b) return;
+  b.disabled = on; if (label !== undefined) b.dataset.label = b.dataset.label || b.innerHTML;
+  b.innerHTML = on ? '<span class="spin-ring"></span> Please wait...' : (b.dataset.label || b.innerHTML);
+}
+
+window.onload = function () {
+  showState('s-checking');
+  sb.auth.getSession().then(function (r) {
+    if (r.data && r.data.session) return routeAfterLogin();
+    showState('s-signin');
+  }).catch(function () { showState('s-signin'); });
+};
+
+function doLogin() {
+  var cnic = document.getElementById('loginCnic').value.replace(/[\s-]/g, '');
+  var pw = document.getElementById('loginPw').value;
+  _msg('loginMsg', '');
+  if (!/^[0-9]{13}$/.test(cnic)) { _msg('loginMsg', 'CNIC must be exactly 13 digits (numbers only).'); return; }
+  if (!pw) { _msg('loginMsg', 'Please enter your password.'); return; }
+  _busy('loginBtn', true);
+  sb.auth.signInWithPassword({ email: cnic + CNIC_DOMAIN, password: pw }).then(function (r) {
+    _busy('loginBtn', false);
+    if (r.error) { _msg('loginMsg', 'Invalid CNIC or password.'); return; }
+    document.getElementById('loginPw').value = '';
+    return routeAfterLogin();
+  }).catch(function () { _busy('loginBtn', false); _msg('loginMsg', 'Could not reach the server. Try again.'); });
+}
+
+function _logoutWith(text) {
+  return sb.auth.signOut().then(function () { _profile = null; showState('s-signin'); _msg('loginMsg', text); });
+}
+
+function routeAfterLogin() {
+  showState('s-checking');
+  return sb.auth.getUser().then(function (r) {
+    if (r.error || !r.data.user) throw new Error('Please sign in again.');
+    var uid = r.data.user.id;
+    return Promise.all([
+      sb.from('user_profiles').select('*').eq('id', uid).maybeSingle(),
+      sb.from('user_drive_connections').select('*').eq('user_id', uid).maybeSingle()
+    ]);
+  }).then(function (rs) {
+    var p = rs[0].data;
+    if (!p) return _logoutWith('Your account has no profile. Contact the administrator.');
+    if (p.status !== 'active') return _logoutWith('Your account is suspended. Contact the administrator.');
+    _profile = p; _driveConn = rs[1].data || null;
+    if (p.must_change_password) { showState('s-changepw'); return; }
+    if (!p.gmail_confirmed_at) { showState('s-gmail'); return; }
+    if (!_driveConn || _driveConn.status !== 'connected') { showState('s-drive'); return; }
+    showState('s-done');
+    setTimeout(function () { bootApp(p.full_name); }, 700);
+  }).catch(function (e) { showState('s-signin'); _msg('loginMsg', e.message); });
+}
+
+function doChangePassword() {
+  var a = document.getElementById('newPw').value, b = document.getElementById('newPw2').value;
+  _msg('pwMsg', '');
+  if (a.length < 8) { _msg('pwMsg', 'Password must be at least 8 characters.'); return; }
+  if (a !== b) { _msg('pwMsg', 'The two passwords do not match.'); return; }
+  _busy('pwBtn', true);
+  sb.functions.invoke('change-password', { body: { new_password: a } }).then(_fnResult).then(function () {
+    _busy('pwBtn', false);
+    document.getElementById('newPw').value = ''; document.getElementById('newPw2').value = '';
+    return sb.auth.refreshSession().then(routeAfterLogin);
+  }).catch(function (e) { _busy('pwBtn', false); _msg('pwMsg', e.message); });
+}
+
+function doConfirmGmail() {
+  var g = document.getElementById('gmailInput').value.trim().toLowerCase();
+  _msg('gmailMsg', '');
+  if (!/^[^@\s]+@(gmail|googlemail)\.com$/.test(g)) { _msg('gmailMsg', 'Please enter a valid Gmail address.'); return; }
+  if (!confirm('Is ' + g + ' your own Gmail address?\nYour dispatch files will be saved in this Google Drive.')) return;
+  _busy('gmailBtn', true);
+  sb.rpc('fn_confirm_gmail', { p_email: g }).then(function (r) {
+    _busy('gmailBtn', false); _chk(r); return routeAfterLogin();
+  }).catch(function (e) { _busy('gmailBtn', false); _msg('gmailMsg', e.message); });
+}
+
+function doConnectDrive() {
+  _msg('driveMsg', ''); _busy('driveBtn', true);
+  ensureDriveToken().then(ensureFolder).then(function () {
+    _busy('driveBtn', false); return routeAfterLogin();
+  }).catch(function (e) { _busy('driveBtn', false); _msg('driveMsg', e.message); });
+}
+function skipDrive() { showState('s-done'); setTimeout(function () { bootApp(_profile.full_name); }, 400); }
+
+function signOut() {
+  if (!confirm('Sign out of Dispatch Register?')) return;
+  stopAutoRefresh();
+  if (_driveToken && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    try { google.accounts.oauth2.revoke(_driveToken, function () {}); } catch (e) {}
+  }
+  _driveToken = ''; _driveTokenExp = 0;
+  document.getElementById('mainApp').style.display = 'none';
+  document.getElementById('setupOverlay').style.display = 'flex';
+  _logoutWith('');
+}
+
+/* ═══════════════════════════════════════════════════
+   ADMIN: CREATE AND MANAGE USERS
+═══════════════════════════════════════════════════ */
+function loadAdminUsers() {
+  var el = document.getElementById('adminUsers');
+  el.innerHTML = '<span class="spin-sm"></span> Loading...';
+  sb.from('user_profiles').select('id,cnic,full_name,designation,district,tehsil,wing,markaz,role,status,gmail_address')
+    .order('full_name').then(function (r) {
+      var rows = _chk(r);
+      var h = '<div style="overflow-x:auto;"><table class="dtable"><thead><tr><th>Name</th><th>CNIC</th><th>Area</th><th>Gmail</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+      rows.forEach(function (u) {
+        var area = [u.district, u.tehsil, u.wing, u.markaz].filter(Boolean).join(' / ');
+        var self = _profile && u.id === _profile.id;
+        h += '<tr><td>' + esc(u.full_name) + (u.role === 'admin' ? ' <b>(admin)</b>' : '') + '<br><small>' + esc(u.designation) + '</small></td>' +
+          '<td style="font-family:monospace;">' + esc(u.cnic) + '</td><td>' + esc(area) + '</td><td>' + esc(u.gmail_address) + '</td>' +
+          '<td>' + esc(u.status) + '</td><td style="white-space:nowrap;">' +
+          '<button class="act-btn ab-view" title="Reset password to CNIC" onclick="adminResetPw(\'' + u.id + '\')"><i class="fas fa-key"></i></button>' +
+          (self ? '' : '<button class="act-btn ab-del" title="' + (u.status === 'active' ? 'Suspend' : 'Activate') + '" onclick="adminToggle(\'' + u.id + '\',\'' + (u.status === 'active' ? 'suspended' : 'active') + '\')"><i class="fas fa-' + (u.status === 'active' ? 'ban' : 'check') + '"></i></button>') +
+          '</td></tr>';
+      });
+      el.innerHTML = h + '</tbody></table></div>';
+    }).catch(function (e) { el.innerHTML = '<div class="alert a-err">Error: ' + esc(e.message) + '</div>'; });
+}
+function _adminCall(body) { return sb.functions.invoke('admin-users', { body: body }).then(_fnResult); }
+function createUser() {
+  var g = function (id) { return document.getElementById(id).value.trim(); };
+  var cnic = g('aCnic').replace(/[\s-]/g, '');
+  _msg('adminMsg', '');
+  if (!/^[0-9]{13}$/.test(cnic)) { _msg('adminMsg', 'CNIC must be exactly 13 digits.'); return; }
+  if (!g('aName')) { _msg('adminMsg', 'Full name is required.'); return; }
+  if (!g('aDistrict')) { _msg('adminMsg', 'District is required.'); return; }
+  _busy('adminCreateBtn', true);
+  _adminCall({ action: 'create_user', cnic: cnic, full_name: g('aName'), designation: g('aDesig'), cell_no: g('aCell'),
+    district: g('aDistrict'), tehsil: g('aTehsil'), wing: g('aWing'), markaz: g('aMarkaz') }).then(function () {
+    _busy('adminCreateBtn', false);
+    showToast('User created. Initial password is the CNIC.');
+    ['aCnic', 'aName', 'aDesig', 'aCell', 'aTehsil', 'aMarkaz'].forEach(function (i) { document.getElementById(i).value = ''; });
+    document.getElementById('aWing').value = '';
+    loadAdminUsers();
+  }).catch(function (e) { _busy('adminCreateBtn', false); _msg('adminMsg', e.message); });
+}
+function adminResetPw(id) {
+  if (!confirm('Reset this user\'s password to their CNIC? They must change it at next login.')) return;
+  _adminCall({ action: 'reset_password', user_id: id }).then(function () { showToast('Password reset to CNIC.'); })
+    .catch(function (e) { showToast('Error: ' + e.message, true); });
+}
+function adminToggle(id, status) {
+  if (!confirm((status === 'suspended' ? 'Suspend' : 'Activate') + ' this user?')) return;
+  _adminCall({ action: 'set_status', user_id: id, status: status }).then(function () { loadAdminUsers(); })
+    .catch(function (e) { showToast('Error: ' + e.message, true); });
 }
 
 /* ═══════════════════════════════════════════════════
@@ -847,6 +1144,9 @@ function showState(id) {
 function bootApp(email) {
   document.getElementById('setupOverlay').style.display = 'none';
   document.getElementById('mainApp').style.display      = 'block';
+  var isAdmin = _profile && _profile.role === 'admin';
+  ['adminTabBtn', 'adminBnBtn'].forEach(function (id) { var el = document.getElementById(id); if (el) el.style.display = isAdmin ? '' : 'none'; });
+  if (isAdmin && !document.getElementById('aDistrict').value) document.getElementById('aDistrict').value = _profile.district || '';
 
   if (email) {
     document.getElementById('userEmailTop').textContent = email;
@@ -929,6 +1229,7 @@ function switchTab(name, btn) {
   } else {
     stopAutoRefresh();
     if (name === 'contacts') loadMasterData();
+    if (name === 'admin') loadAdminUsers();
   }
 }
 
@@ -999,7 +1300,7 @@ function fetchDispatchNo() {
 function startAutoRefresh() {
   stopAutoRefresh();
   fetchDispatchNo();
-  _refreshTimer = setInterval(fetchDispatchNo, 3000);
+  _refreshTimer = setInterval(fetchDispatchNo, 30000);
 }
 function stopAutoRefresh() {
   if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
@@ -1027,6 +1328,7 @@ function officeSelectionChanged() {
 }
 
 function updateEmailNotices(selected) {
+  return; // email notifications are not part of this version
   var emailNotice   = document.getElementById('emailNotice');
   var noEmailNotice = document.getElementById('noEmailNotice');
   var targetEl      = document.getElementById('emailTarget');
@@ -1206,7 +1508,8 @@ function submitDispatch() {
       remarks:         document.getElementById('fRemarks').value.trim(),
       fileBase64:      b64   || '',
       fileName:        fname || '',
-      fileMime:        fmime || ''
+      fileMime:        fmime || '',
+      fileObj:         _pendingFile
     };
     callApi('processForm', { formData: formData }).then(function (r) {
       btn.disabled = false;
@@ -1226,13 +1529,13 @@ function submitDispatch() {
   }
 
   if (_pendingFile) {
-    var reader = new FileReader();
-    reader.onload = function (e) {
-      var parts = e.target.result.split(',');
-      doSubmit(parts[1], _pendingFile.name, _pendingFile.type);
-    };
-    reader.onerror = function () { showToast('Could not read file. Saving without attachment.', true); doSubmit('', '', ''); };
-    reader.readAsDataURL(_pendingFile);
+    ensureDriveToken().then(function () {
+      doSubmit('', _pendingFile.name, _pendingFile.type);
+    }).catch(function (err) {
+      btn.disabled = false;
+      document.getElementById('formMsg').innerHTML = '';
+      showToast(err.message, true);
+    });
   } else {
     doSubmit('', '', '');
   }
@@ -1292,9 +1595,9 @@ function _renderReports(data) {
       '<td style="max-width:120px;">' + esc(r.selectOffice) + '</td>' +
       '<td style="max-width:100px;">' + esc(r.category) + '</td>' +
       '<td style="white-space:nowrap;">' +
-      '<button class="act-btn ab-view" onclick="viewDetail(' + r.rowNum + ')" title="View"><i class="fas fa-eye"></i></button>' +
-      (r.hasFile ? '<button class="act-btn ab-dl" onclick="dlFile(' + r.rowNum + ')" title="Download"><i class="fas fa-download"></i></button>' : '') +
-      '<button class="act-btn ab-del" onclick="delReport(' + r.rowNum + ')" title="Delete"><i class="fas fa-trash"></i></button>' +
+      '<button class="act-btn ab-view" onclick="viewDetail(\'' + r.rowNum + '\')" title="View"><i class="fas fa-eye"></i></button>' +
+      (r.hasFile ? '<button class="act-btn ab-dl" onclick="dlFile(\'' + r.rowNum + '\')" title="Download"><i class="fas fa-download"></i></button>' : '<button class="act-btn ab-dl" onclick="attachFile(\'' + r.rowNum + '\')" title="Attach file"><i class="fas fa-paperclip"></i></button>') +
+      '<button class="act-btn ab-del" onclick="delReport(\'' + r.rowNum + '\')" title="Delete"><i class="fas fa-trash"></i></button>' +
       '</td></tr>';
   });
   el.innerHTML = h + '</tbody></table></div>';
@@ -1317,17 +1620,10 @@ function viewDetail(rowNum) {
   openModal('detailModal');
 }
 
-function dlFile(rowNum) {
-  showToast('Preparing download...');
-  callApi('getFileForDownload', { rowNum: rowNum }).then(function (r) {
-    var bytes = atob(r.base64);
-    var ab = new ArrayBuffer(bytes.length);
-    var ia = new Uint8Array(ab);
-    for (var i = 0; i < bytes.length; i++) ia[i] = bytes.charCodeAt(i);
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([ab], { type: r.mimeType }));
-    a.download = r.fileName; a.click();
-  }).catch(function (e) { showToast('Download failed: ' + e.message, true); });
+function dlFile(id) {
+  var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
+  if (!rec || !rec.fileUrl) { showToast('No file attached.', true); return; }
+  window.open(rec.fileUrl, '_blank', 'noopener');
 }
 
 function delReport(rowNum) {
@@ -1360,7 +1656,7 @@ function _renderDeleted(data) {
   data.forEach(function (r) {
     h += '<tr><td>' + (r.reportDate || '') + '</td><td>' + esc(r.dispatchNo) + '</td><td>' + esc(r.selectOffice) + '</td>' +
       '<td>' + (r.deletedDate || '') + '</td>' +
-      '<td><button class="act-btn ab-rest" onclick="restoreRec(' + r.rowNum + ')">↩ Restore</button></td></tr>';
+      '<td><button class="act-btn ab-rest" onclick="restoreRec(\'' + r.rowNum + '\')">↩ Restore</button></td></tr>';
   });
   el.innerHTML = h + '</tbody></table></div>';
 }
@@ -1377,13 +1673,13 @@ function restoreRec(rowNum) {
 ═══════════════════════════════════════════════════ */
 function _renderContactsGrid(contacts) {
   var el = document.getElementById('contactsGrid');
-  if (!contacts || !contacts.length) { el.innerHTML = '<p style="color:var(--sub);font-size:.88rem;">No contacts yet. Add your first contact above.</p>'; return; }
+  if (!contacts || !contacts.length) { el.innerHTML = '<p style="color:var(--sub);font-size:.88rem;">No recipients yet. Add the first one above.</p>'; return; }
+  var scopeTxt = { district: 'District', tehsil: 'Tehsil', wing: 'Tehsil + Wing' };
   var h = '';
   contacts.forEach(function (c) {
     var emails = [c.emailOffice, c.emailPersonal].filter(Boolean).join(', ');
-    var safe   = c.officeName.replace(/'/g, "\\'");
-    h += '<div class="contact-card" onclick="openContactModal(\'edit\',\'' + safe + '\')">' +
-      '<div class="cc-name">' + esc(c.officeName) + '</div>' +
+    h += '<div class="contact-card" onclick="openContactModal(\'edit\',\'' + c.id + '\')">' +
+      '<div class="cc-name">' + esc(c.officeName) + ' <small style="font-weight:600;color:var(--sub);">· ' + (scopeTxt[c.scopeLevel] || '') + '</small></div>' +
       (c.officerName ? '<div class="cc-officer"><i class="fas fa-user" style="margin-right:4px;color:var(--sub);"></i>' + esc(c.officerName) + '</div>' : '') +
       (emails ? '<div class="cc-email"><i class="fas fa-envelope" style="margin-right:4px;"></i>' + esc(emails) + '</div>' : '') +
       (c.cellNo ? '<div style="font-size:.78rem;color:var(--sub);margin-top:2px;"><i class="fas fa-phone" style="margin-right:4px;"></i>' + esc(c.cellNo) + '</div>' : '') +
@@ -1392,28 +1688,40 @@ function _renderContactsGrid(contacts) {
   el.innerHTML = h;
 }
 
-function openContactModal(mode, officeName) {
+function _fillScopeOptions() {
+  var sel = document.getElementById('cScope'), p = _profile || {};
+  sel.innerHTML = '<option value="district">All users in district ' + esc(p.district || '') + '</option>';
+  if (p.tehsil) sel.innerHTML += '<option value="tehsil">Users in tehsil ' + esc(p.tehsil) + '</option>';
+  if (p.tehsil && p.wing) sel.innerHTML += '<option value="wing">Users in ' + esc(p.tehsil) + ', wing ' + esc(p.wing) + '</option>';
+  sel.value = p.wing && p.tehsil ? 'wing' : p.tehsil ? 'tehsil' : 'district';
+}
+
+function openContactModal(mode, id) {
   document.getElementById('cMode').value = mode;
   document.getElementById('cOldName').value = '';
-  ['cName','cOfficer','cEmailOffice','cEmailPersonal','cCell'].forEach(function (id) {
-    document.getElementById(id).value = '';
-  });
-  document.getElementById('delContactBtn').style.display  = 'none';
-  document.getElementById('contactModalTitle').textContent = mode === 'add' ? 'Add Contact' : 'Edit Contact';
-
-  if (mode === 'edit' && officeName) {
-    callApi('getContactDetails', { officeName: officeName }).then(function (r) {
-      var c = r.contact;
-      if (!c) { showToast('Contact not found.', true); return; }
-      document.getElementById('cMode').value          = 'edit';
-      document.getElementById('cOldName').value       = c.officeName;
-      document.getElementById('cName').value          = c.officeName;
-      document.getElementById('cOfficer').value       = c.officerName    || '';
-      document.getElementById('cEmailOffice').value   = c.emailOffice    || '';
-      document.getElementById('cEmailPersonal').value = c.emailPersonal  || '';
-      document.getElementById('cCell').value          = c.cellNo         || '';
-      document.getElementById('delContactBtn').style.display = '';
-    }).catch(function (e) { showToast('Error: ' + e.message, true); });
+  var fields = ['cName', 'cOfficer', 'cEmailOffice', 'cEmailPersonal', 'cCell'];
+  fields.forEach(function (i) { var el = document.getElementById(i); el.value = ''; el.disabled = false; });
+  _fillScopeOptions();
+  document.getElementById('cScope').disabled = (mode === 'edit');
+  document.getElementById('delContactBtn').style.display = 'none';
+  document.getElementById('saveContactBtn').style.display = '';
+  document.getElementById('contactModalTitle').textContent = mode === 'add' ? 'Add Recipient' : 'Edit Recipient';
+  if (mode === 'edit' && id) {
+    var c = _allContacts.find(function (x) { return x.id === id; });
+    if (!c) { showToast('Contact not found.', true); return; }
+    document.getElementById('cOldName').value = c.id;
+    document.getElementById('cName').value = c.officeName;
+    document.getElementById('cOfficer').value = c.officerName;
+    document.getElementById('cEmailOffice').value = c.emailOffice;
+    document.getElementById('cEmailPersonal').value = c.emailPersonal;
+    document.getElementById('cCell').value = c.cellNo;
+    document.getElementById('cScope').value = c.scopeLevel;
+    if (c.canEdit) { document.getElementById('delContactBtn').style.display = ''; }
+    else {
+      fields.forEach(function (i) { document.getElementById(i).disabled = true; });
+      document.getElementById('saveContactBtn').style.display = 'none';
+      document.getElementById('contactModalTitle').textContent = 'Recipient (added by another user)';
+    }
   }
   openModal('contactModal');
 }
@@ -1423,22 +1731,23 @@ function submitContact() {
   if (!name) { showToast('Office Name is required.', true); return; }
   var mode = document.getElementById('cMode').value;
   var data = {
+    id:            document.getElementById('cOldName').value,
     officeName:    name,
     officerName:   document.getElementById('cOfficer').value.trim(),
     emailOffice:   document.getElementById('cEmailOffice').value.trim(),
     emailPersonal: document.getElementById('cEmailPersonal').value.trim(),
-    cellNo:        document.getElementById('cCell').value.trim()
+    cellNo:        document.getElementById('cCell').value.trim(),
+    scopeLevel:    document.getElementById('cScope').value
   };
-  if (mode === 'edit') data.originalOfficeName = document.getElementById('cOldName').value;
   callApi('saveContact', { contactData: data, mode: mode }).then(function (r) {
     showToast(r.message); closeModal('contactModal'); loadMasterData();
   }).catch(function (e) { showToast('Error: ' + e.message, true); });
 }
 
 function removeContact() {
-  var name = document.getElementById('cName').value;
-  if (!name || !confirm('Delete contact: ' + name + '?')) return;
-  callApi('deleteContact', { officeName: name }).then(function (r) {
+  var id = document.getElementById('cOldName').value, name = document.getElementById('cName').value;
+  if (!id || !confirm('Remove recipient: ' + name + '?')) return;
+  callApi('deleteContact', { id: id }).then(function (r) {
     showToast(r.message); closeModal('contactModal'); loadMasterData();
   }).catch(function (e) { showToast('Error: ' + e.message, true); });
 }
