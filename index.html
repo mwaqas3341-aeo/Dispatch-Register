@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 
   <style>
@@ -633,6 +634,34 @@
         <div class="card-head"><h3><i class="fas fa-users" style="margin-right:8px;"></i>Users</h3><p>Reset a password to the CNIC, or suspend / activate an account</p></div>
         <div class="card-body"><div id="adminUsers"></div></div>
       </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="card-head"><h3><i class="fas fa-school" style="margin-right:8px;"></i>Import Schools List</h3>
+          <p>Excel/CSV with EMIS code and school name. Used for the EMIS lookup. Safe to repeat (updates existing codes).</p></div>
+        <div class="card-body">
+          <input type="file" id="schFile" class="inp" accept=".xlsx,.xls,.csv">
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+            <button class="btn btn-out" onclick="schoolsImport(false)"><i class="fas fa-search"></i> Check</button>
+            <button class="btn btn-ok" id="schImportBtn" onclick="schoolsImport(true)"><i class="fas fa-upload"></i> Import</button>
+          </div>
+          <div id="schReport" style="margin-top:10px;font-size:.85rem;"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="card-head"><h3><i class="fas fa-file-import" style="margin-right:8px;"></i>Import Old Dispatch Records</h3>
+          <p>Choose the user, then their old workbook (.xlsx with "Log Sheet" and optionally "Deleted Logs"). Run Check first; nothing is saved until you press Import.</p></div>
+        <div class="card-body">
+          <label class="lbl">Records belong to</label>
+          <select id="impUser" class="inp"></select>
+          <label class="lbl" style="margin-top:8px;">Old workbook</label>
+          <input type="file" id="impFile" class="inp" accept=".xlsx,.xls">
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+            <button class="btn btn-out" onclick="dispatchImport(false)"><i class="fas fa-search"></i> Check (no changes)</button>
+            <button class="btn btn-ok" id="impBtn" onclick="dispatchImport(true)"><i class="fas fa-file-import"></i> Import</button>
+          </div>
+          <div id="impReport" style="margin-top:10px;font-size:.85rem;"></div>
+        </div>
+      </div>
     </div>
 
   </div><!-- /content -->
@@ -1073,6 +1102,8 @@ function loadAdminUsers() {
           '</td></tr>';
       });
       el.innerHTML = h + '</tbody></table></div>';
+      var sel = document.getElementById('impUser');
+      if (sel) sel.innerHTML = '<option value="">-- Select user --</option>' + rows.map(function (u) { return '<option value="' + u.id + '">' + esc(u.full_name) + ' (' + esc(u.cnic) + ')</option>'; }).join('');
     }).catch(function (e) { el.innerHTML = '<div class="alert a-err">Error: ' + esc(e.message) + '</div>'; });
 }
 function _adminCall(body) { return sb.functions.invoke('admin-users', { body: body }).then(_fnResult); }
@@ -1093,6 +1124,131 @@ function createUser() {
     loadAdminUsers();
   }).catch(function (e) { _busy('adminCreateBtn', false); _msg('adminMsg', e.message); });
 }
+/* ═══════════════════════════════════════════════════
+   ADMIN: IMPORT TOOLS (schools list, old dispatch records)
+═══════════════════════════════════════════════════ */
+function _readWb(file) {
+  return new Promise(function (res, rej) {
+    if (typeof XLSX === 'undefined') return rej(new Error('Spreadsheet reader did not load. Refresh and try again.'));
+    var rd = new FileReader();
+    rd.onload = function () { try { res(XLSX.read(rd.result, { type: 'array', cellDates: true })); } catch (e) { rej(e); } };
+    rd.onerror = function () { rej(new Error('Could not read the file.')); };
+    rd.readAsArrayBuffer(file);
+  });
+}
+function _grid(ws) { return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }); }
+function _cols(headers, spec) {
+  var out = {};
+  Object.keys(spec).forEach(function (k) {
+    out[k] = -1;
+    for (var i = 0; i < spec[k].length && out[k] < 0; i++) out[k] = headers.findIndex(function (h) { return spec[k][i].test(h); });
+  });
+  return out;
+}
+function _txt(v) { return v === null || v === undefined ? '' : String(v).trim(); }
+
+var MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+function _isoDate(v) {
+  var y, m, d, x;
+  if (v instanceof Date && !isNaN(v)) { x = new Date(v.getTime() + 12 * 3600e3); y = x.getUTCFullYear(); m = x.getUTCMonth() + 1; d = x.getUTCDate(); }
+  else if (typeof v === 'number' && v > 20000 && v < 80000) { x = new Date(Math.round((v - 25569) * 86400e3)); y = x.getUTCFullYear(); m = x.getUTCMonth() + 1; d = x.getUTCDate(); }
+  else {
+    var t = _txt(v), g;
+    if ((g = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) { y = +g[1]; m = +g[2]; d = +g[3]; }
+    else if ((g = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/))) { d = +g[1]; m = +g[2]; y = +g[3]; }
+    else if ((g = t.match(/^(\d{1,2})[\s\-]([A-Za-z]{3,9})[\s\-,.]*(\d{4})/))) { d = +g[1]; m = MONTHS[g[2].slice(0, 3).toLowerCase()]; y = +g[3]; }
+    else return '';
+  }
+  if (!y || !m || !d || m > 12 || d > 31) return '';
+  var chk = new Date(Date.UTC(y, m - 1, d));
+  if (chk.getUTCMonth() !== m - 1) return '';
+  return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+
+function schoolsImport(commit) {
+  var f = document.getElementById('schFile').files[0], rep = document.getElementById('schReport');
+  if (!f) { rep.innerHTML = '<span style="color:#c0392b;">Choose a file first.</span>'; return; }
+  rep.textContent = 'Reading file...';
+  _readWb(f).then(function (wb) {
+    var spec = { emis: [/emis/], name: [/^s_name$/, /school.?name/, /^name$/], district: [/^d_name$/, /district/], tehsil: [/^t_name$/, /tehsil/],
+      markaz: [/^m_name$/, /markaz/], wing: [/^w_name$/, /wing/], level: [/^s_level$/, /level/], gender_type: [/^s_type$/, /gender/, /^type$/], area: [/^s_area$/, /area/] };
+    var rows = null, c = null;
+    wb.SheetNames.forEach(function (n) {
+      if (rows) return;
+      var g = _grid(wb.Sheets[n]); if (!g.length) return;
+      var h = g[0].map(function (x) { return _txt(x).toLowerCase(); }), cc = _cols(h, spec);
+      if (cc.emis >= 0 && cc.name >= 0) { rows = g.slice(1); c = cc; }
+    });
+    if (!rows) throw new Error('No sheet with an EMIS column and a school name column was found.');
+    var good = [], bad = 0, seen = {};
+    rows.forEach(function (r) {
+      var e = _txt(r[c.emis]).replace(/\D/g, ''), nm = _txt(r[c.name]);
+      if (e.length !== 8 || !nm) { if (_txt(r[c.emis]) || nm) bad++; return; }
+      if (seen[e]) return; seen[e] = 1;
+      var o = { emis_code: e, name: nm };
+      ['district', 'tehsil', 'markaz', 'wing', 'level', 'gender_type', 'area'].forEach(function (k) { if (c[k] >= 0) o[k] = _txt(r[c[k]]) || null; });
+      good.push(o);
+    });
+    if (!commit) { rep.innerHTML = 'Found <b>' + good.length + '</b> valid schools; <b>' + bad + '</b> rows skipped (missing name or EMIS not 8 digits). Nothing saved.'; return; }
+    if (!confirm('Import ' + good.length + ' schools?')) { rep.textContent = ''; return; }
+    _busy('schImportBtn', true);
+    var done = 0;
+    function next() {
+      if (done >= good.length) { _busy('schImportBtn', false); rep.innerHTML = '<span style="color:#1e8449;">Imported ' + good.length + ' schools.</span>'; return; }
+      var chunk = good.slice(done, done + 1000);
+      return sb.from('schools').upsert(chunk, { onConflict: 'emis_code' }).then(function (r) {
+        if (r.error) throw new Error(r.error.message);
+        done += chunk.length; rep.textContent = 'Imported ' + done + ' / ' + good.length + '...'; return next();
+      });
+    }
+    return next();
+  }).catch(function (e) { _busy('schImportBtn', false); rep.innerHTML = '<span style="color:#c0392b;">' + esc(e.message) + '</span>'; });
+}
+
+function dispatchImport(commit) {
+  var uid = document.getElementById('impUser').value, f = document.getElementById('impFile').files[0], rep = document.getElementById('impReport');
+  if (!uid) { rep.innerHTML = '<span style="color:#c0392b;">Choose the user first.</span>'; return; }
+  if (!f) { rep.innerHTML = '<span style="color:#c0392b;">Choose the workbook first.</span>'; return; }
+  rep.textContent = 'Reading workbook...';
+  _readWb(f).then(function (wb) {
+    var spec = { sr: [/^sr/], date: [/^date$/, /^(?!.*deleted).*date/], no: [/dispatch\s*no/, /^no\.?$/], office: [/office|sent to/], category: [/categ|nature/],
+      subject: [/descr|subject/], remarks: [/remark/], url: [/file/], emis: [/emis/], accused: [/accused|concerned/],
+      school_type: [/school\s*type/], school_name: [/school\s*name/], deleted_on: [/deleted\s*on/] };
+    var out = [], used = [];
+    wb.SheetNames.forEach(function (n) {
+      var isDel = /deleted/i.test(n), isLog = /log/i.test(n);
+      if (!isDel && !isLog) return;
+      var g = _grid(wb.Sheets[n]); if (g.length < 2) return;
+      var h = g[0].map(function (x) { return _txt(x).toLowerCase(); }), c = _cols(h, spec);
+      if (c.date < 0 || c.no < 0) return;
+      used.push(n + ' (' + (g.length - 1) + ' rows)');
+      for (var i = 1; i < g.length; i++) {
+        var r = g[i];
+        if (r.every(function (x) { return _txt(x) === ''; })) continue;
+        var o = { sheet: n, row: i + 1, deleted: isDel, date: _isoDate(r[c.date]), no: _txt(r[c.no]) };
+        ['sr', 'office', 'category', 'subject', 'remarks', 'url', 'emis', 'accused', 'school_type', 'school_name'].forEach(function (k) { if (c[k] >= 0) o[k] = _txt(r[c[k]]); });
+        if (c.deleted_on >= 0) { var di = _isoDate(r[c.deleted_on]); if (di) o.deleted_on = di + 'T00:00:00Z'; }
+        out.push(o);
+      }
+    });
+    if (!out.length) throw new Error('No "Log Sheet" / "Deleted Logs" sheet with Date and Dispatch No. columns was found.');
+    if (commit && !confirm('Import ' + out.length + ' rows into the selected user\'s register?')) { rep.textContent = ''; return; }
+    if (commit) _busy('impBtn', true);
+    var batch = 'imp-' + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    return sb.rpc('fn_admin_import_dispatch', { p_user_id: uid, p_batch: batch, p_rows: out, p_commit: commit }).then(function (r) {
+      if (commit) _busy('impBtn', false);
+      var d = _chk(r), h = 'Sheets read: ' + esc(used.join(', ')) + '<br>Rows: <b>' + d.total + '</b> · ' + (commit ? 'Imported' : 'Would import') + ': <b>' + d.importable +
+        '</b> · Duplicate numbers: <b>' + d.duplicates + '</b> · Problems: <b>' + d.errors + '</b>' + (commit ? '<br><span style="color:#1e8449;">Done. Skipped rows were kept in the import staging table for review.</span>' : '<br>Nothing was saved.');
+      if (d.problems && d.problems.length) {
+        h += '<div style="max-height:160px;overflow:auto;margin-top:8px;border:1px solid #dde3ee;border-radius:6px;padding:6px;">';
+        d.problems.slice(0, 60).forEach(function (p) { h += esc(p.sheet) + ' row ' + esc(p.row) + ': ' + esc(p.problem) + '<br>'; });
+        h += '</div>';
+      }
+      rep.innerHTML = h;
+    });
+  }).catch(function (e) { _busy('impBtn', false); rep.innerHTML = '<span style="color:#c0392b;">' + esc(e.message) + '</span>'; });
+}
+
 function adminResetPw(id) {
   if (!confirm('Reset this user\'s password to their CNIC? They must change it at next login.')) return;
   _adminCall({ action: 'reset_password', user_id: id }).then(function () { showToast('Password reset to CNIC.'); })
