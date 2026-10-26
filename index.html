@@ -11,8 +11,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
-  <!-- Client-side attachment compression (images + light PDF re-save) -->
-  <script src="compression.js"></script>
 
   <style>
     /* ═══════════════════════════════════════════
@@ -390,19 +388,31 @@
       <button class="btn-allow" id="pwBtn" onclick="doChangePassword()"><i class="fas fa-check-circle" style="margin-right:8px;"></i>Save Password</button>
     </div>
 
+    <!-- s-gmail -->
+    <div id="s-gmail" style="display:none;">
+      <div class="setup-icon si-gold"><i class="fab fa-google"></i></div>
+      <h2>Your Gmail Address</h2>
+      <p class="sub">Enter your own Gmail. Your dispatch files will be saved in this account's Google Drive.</p>
+      <input class="sin" id="gmailInput" type="email" placeholder="yourname@gmail.com" autocomplete="email" onkeydown="if(event.key==='Enter')doConfirmGmail()">
+      <div class="setup-msg" id="gmailMsg"></div>
+      <button class="btn-allow" id="gmailBtn" onclick="doConfirmGmail()"><i class="fas fa-check-circle" style="margin-right:8px;"></i>Confirm Gmail</button>
+    </div>
+
     <!-- s-consent: permissions needed -->
     <div id="s-consent" style="display:none;">
-      <div class="setup-icon si-gold"><i class="fas fa-user-shield"></i></div>
+      <div class="setup-icon si-gold"><i class="fab fa-google-drive"></i></div>
       <h2>Permissions Needed</h2>
-      <p class="sub">To use the Dispatch Register, please allow the following. You are asked only once.</p>
+      <p class="sub">To save your dispatch files in <strong id="consentGmail">your Gmail</strong>'s Google Drive, please allow:</p>
       <div class="perm-item"><span class="pi-icon"><i class="fas fa-upload"></i></span>
-        <span><strong>Upload files</strong> — save the documents you attach to a dispatch.</span></div>
+        <span><strong>Upload files</strong> to your Google Drive.</span></div>
       <div class="perm-item"><span class="pi-icon"><i class="fas fa-folder-plus"></i></span>
-        <span><strong>Create folders</strong> — keep each dispatch's files in its own folder inside your private storage area.</span></div>
+        <span><strong>Create a folder</strong> named "Dispatch Register Files".</span></div>
       <div class="perm-item"><span class="pi-icon"><i class="fas fa-lock"></i></span>
-        <span><strong>Private to you</strong> — only your account can open your files. Other users cannot see them.</span></div>
+        <span>The app can only see files it creates itself, never the rest of your Drive.</span></div>
       <div class="setup-msg" id="consentMsg"></div>
-      <button class="btn-allow" id="consentBtn" onclick="doGiveConsent()"><i class="fas fa-check-circle" style="margin-right:8px;"></i>I Allow</button>
+      <button class="btn-allow" id="consentBtn" onclick="startConnect()"><i class="fas fa-link" style="margin-right:8px;"></i>Allow &amp; Connect</button>
+      <div id="connectWrap" style="display:none;margin-top:12px;"><iframe id="connectFrame" style="width:100%;height:190px;border:0;border-radius:10px;background:#fff;"></iframe></div>
+      <span class="setup-link" onclick="skipConnect()">Skip for now</span>
     </div>
 
     <!-- s-done: Ready -->
@@ -528,10 +538,9 @@
           </div>
 
           <div class="sec">File Attachment</div>
-          <div class="file-zone" id="fileZone">
-            <input type="file" id="fileInput" accept="image/*,.pdf,.doc,.docx,.xlsx,.xls" onchange="handleFileSelect(this)">
+          <div class="file-zone" id="fileZone" onclick="openUploader('upload', onAttached)">
             <div class="file-zone-icon"><i class="fas fa-cloud-arrow-up"></i></div>
-            <div class="file-zone-text"><strong>Tap to upload</strong> or drag &amp; drop<br>PDF, Images, Word, Excel</div>
+            <div class="file-zone-text"><strong>Tap to attach a file</strong><br>Saved in your own Google Drive<br>PDF, Images, Word, Excel</div>
             <div class="file-selected" id="fileSelected"></div>
 
             <div class="cmp-box" id="cmpBox" onclick="event.stopPropagation()">
@@ -675,6 +684,14 @@
   </div>
 </div>
 
+<!-- Drive uploader modal -->
+<div class="modal-overlay" id="uploaderModal">
+  <div class="modal-box">
+    <div class="modal-head"><h4>Attach File</h4><button class="modal-close" onclick="closeUploader()"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body" style="padding:0;"><iframe id="uploaderFrame" style="width:100%;height:300px;border:0;"></iframe></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -686,6 +703,7 @@
 ═══════════════════════════════════════════════════ */
 var SUPABASE_URL     = 'https://btjtojkhiwemcnssdoih.supabase.co';
 var SUPABASE_KEY     = 'sb_publishable_nITbyRjd8sFmEqyo4oa5jA_ay4k2e7A';
+var UPLOADER_URL = '';   // paste the Apps Script web app URL here (ends with /exec)
 var CNIC_DOMAIN      = '@dispatch.local';
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
@@ -708,7 +726,7 @@ var _adminConfig = {
 var _allContacts    = [];
 var _lastReportData = [];
 var _refreshTimer   = null;
-var _pendingFile    = null;
+var _attached       = null;   // file already saved in the user's Drive: {id,name,mimeType,size,webViewLink}
 var _compressing    = false;
 
 /* ═══════════════════════════════════════════════════
@@ -743,12 +761,12 @@ function _mapRecord(x, i) {
            dispatchNo: fmtNo(x.dispatch_no), selectOffice: offices.join(', '), category: x.category || '',
            description: x.subject || '', remarks: x.remarks || '', emisCode: x.emis_code || '',
            accusedName: x.concerned_person || '', schoolType: x.school_type || '', schoolName: x.school_name || '',
-           hasFile: !!doc, fileUrl: doc ? (doc.legacy_url || '') : '', storagePath: doc ? (doc.storage_path || '') : '',
+           hasFile: !!doc, fileUrl: doc ? (doc.drive_web_view_link || doc.legacy_url || '') : '',
            deletedDate: x.deleted_at ? new Date(x.deleted_at).toLocaleString('en-GB') : '' };
 }
 var REC_SELECT = 'id,dispatch_date,dispatch_no,category,subject,remarks,school_type,emis_code,school_name,' +
   'concerned_person,other_office_name,deleted_at,dispatch_recipients(name_snapshot),' +
-  'dispatch_documents(id,storage_path,legacy_url,status)';
+  'dispatch_documents(id,drive_web_view_link,legacy_url,status)';
 
 var API = {
   getAdminConfig: function () {
@@ -820,9 +838,9 @@ var API = {
       if (r.error) return { success: false, error: r.error.message };
       var row = r.data, msg = 'Dispatch #' + fmtNo(row.dispatch_no) + ' saved';
       if (!f.fileObj) return { success: true, message: msg + '.' };
-      return uploadFile(f.fileObj, row)
+      return recordDocument(row.id, f.fileObj)
         .then(function () { return { success: true, message: msg + ' with attachment.' }; })
-        .catch(function (e) { return { success: true, message: msg + ', but the attachment was NOT uploaded (' + e.message + '). Use the paperclip in Reports to retry.' }; });
+        .catch(function (e) { return { success: true, message: msg + ', but the file link could not be saved (' + e.message + '). Use the paperclip in Reports to retry.' }; });
     });
   },
   getFilteredReports: function (d) {
@@ -866,41 +884,94 @@ function callApi(action, data) {
 }
 
 /* ═══════════════════════════════════════════════════
-   FILE STORAGE  (private Supabase Storage, one folder per user)
+   GOOGLE DRIVE  (files live in each user's own Drive; Supabase keeps only the link)
+   The uploader is a small Apps Script page that runs as the signed-in Google user.
 ═══════════════════════════════════════════════════ */
-var BUCKET = 'dispatch-files';
+var _nonce = '', _uploaderCb = null;
 
-function _safeName(n) { return String(n || 'file').replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80); }
+function _uploaderReady() { return /^https:\/\/script\.google\.com\//.test(UPLOADER_URL); }
+function _frameUrl(mode, label) {
+  _nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return UPLOADER_URL + (UPLOADER_URL.indexOf('?') < 0 ? '?' : '&') + 'mode=' + mode + '&n=' + _nonce + '&label=' + encodeURIComponent(label || '');
+}
+function openUploader(mode, cb, label) {
+  if (!_uploaderReady()) { showToast('Google Drive is not set up yet. Please contact the administrator.', true); return; }
+  _uploaderCb = cb;
+  document.getElementById('uploaderFrame').src = _frameUrl(mode, label);
+  openModal('uploaderModal');
+}
+function closeUploader() {
+  document.getElementById('uploaderFrame').src = 'about:blank';
+  closeModal('uploaderModal'); _uploaderCb = null;
+}
 
-function uploadFile(file, row) {
-  var path = _profile.id + '/' + row.id + '/' + Date.now() + '_' + _safeName(file.name);
-  return sb.storage.from(BUCKET).upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
-    .then(function (r) {
-      if (r.error) throw new Error(r.error.message);
-      return sb.from('dispatch_documents').insert({ dispatch_id: row.id, user_id: _profile.id, file_name: file.name,
-        mime_type: file.type, file_size: file.size, storage_path: path, source: 'storage' });
-    }).then(function (r) { _chk(r); });
+window.addEventListener('message', function (ev) {
+  var d = ev.data;
+  if (!d || d.source !== 'dispatch-uploader' || !_nonce || d.nonce !== _nonce) return;
+  var host = ''; try { host = new URL(ev.origin).hostname; } catch (e) {}
+  if (!/(^|\.)(googleusercontent|google)\.com$/.test(host)) return;
+  if (d.type === 'error') { _msg('consentMsg', d.message || 'Google Drive error.'); return; }
+  if (!_profile || !_profile.gmail_address || String(d.email || '').toLowerCase() !== _profile.gmail_address) {
+    var m = 'This Google account (' + (d.email || 'unknown') + ') is not your confirmed Gmail (' + (_profile && _profile.gmail_address) + '). Sign in to the correct Google account in this browser and try again.';
+    _msg('consentMsg', m); showToast(m, true); return;
+  }
+  var ready = (_profile.consent_given_at && _profile.drive_folder_id === d.folderId)
+    ? Promise.resolve()
+    : sb.rpc('fn_drive_connected', { p_google_email: d.email, p_folder_id: d.folderId }).then(function (r) {
+        _chk(r); _profile.consent_given_at = _profile.consent_given_at || new Date().toISOString(); _profile.drive_folder_id = d.folderId;
+      });
+  ready.then(function () {
+    if (d.type === 'connected') { routeAfterLogin(); return; }
+    if (d.type === 'uploaded') { var cb = _uploaderCb; closeUploader(); if (cb) cb(d.file); }
+  }).catch(function (e) { _msg('consentMsg', e.message); showToast(e.message, true); });
+});
+
+function onAttached(file) {
+  _attached = file;
+  var el = document.getElementById('fileSelected');
+  el.textContent = '📎 ' + file.name + ' (saved in your Google Drive)';
+  el.style.display = 'block';
+}
+
+function recordDocument(dispatchId, file) {
+  return sb.from('dispatch_documents').insert({ dispatch_id: dispatchId, user_id: _profile.id, file_name: file.name,
+    mime_type: file.mimeType, file_size: Number(file.size) || null, drive_file_id: file.id,
+    drive_web_view_link: file.webViewLink, source: 'user_drive' }).then(function (r) { _chk(r); });
 }
 
 function attachFile(id) {
   var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
   if (!rec) return;
-  var inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'image/*,.pdf,.doc,.docx,.xlsx,.xls';
-  inp.onchange = function () {
-    var f = inp.files[0]; if (!f) return;
-    showToast('Uploading...');
-    uploadFile(f, { id: rec.rowNum }).then(function () { showToast('File attached.'); loadReports(); })
-      .catch(function (e) { showToast('Upload failed: ' + e.message, true); });
-  };
-  inp.click();
+  openUploader('upload', function (file) {
+    recordDocument(rec.rowNum, file).then(function () { showToast('File attached.'); loadReports(); })
+      .catch(function (e) { showToast('Could not save the link: ' + e.message, true); });
+  }, 'Dispatch ' + rec.dispatchNo);
+}
+
+function startConnect() {
+  _msg('consentMsg', '');
+  if (!_uploaderReady()) { _msg('consentMsg', 'Google Drive is not set up yet. Please contact the administrator.'); return; }
+  document.getElementById('connectWrap').style.display = 'block';
+  document.getElementById('connectFrame').src = _frameUrl('connect');
+}
+function skipConnect() { showState('s-done'); setTimeout(function () { bootApp(_profile.full_name); }, 400); }
+
+function doConfirmGmail() {
+  var g = document.getElementById('gmailInput').value.trim().toLowerCase();
+  _msg('gmailMsg', '');
+  if (!/^[^@\s]+@(gmail|googlemail)\.com$/.test(g)) { _msg('gmailMsg', 'Please enter a valid Gmail address.'); return; }
+  if (!confirm('Is ' + g + ' your own Gmail address?\nYour dispatch files will be saved in this Google Drive.')) return;
+  _busy('gmailBtn', true);
+  sb.rpc('fn_confirm_gmail', { p_email: g }).then(function (r) {
+    _busy('gmailBtn', false); _chk(r); return routeAfterLogin();
+  }).catch(function (e) { _busy('gmailBtn', false); _msg('gmailMsg', e.message); });
 }
 
 /* ═══════════════════════════════════════════════════
    LOGIN (CNIC + password) AND FIRST-LOGIN STEPS
 ═══════════════════════════════════════════════════ */
 function showState(id) {
-  ['s-signin', 's-checking', 's-changepw', 's-consent', 's-done'].forEach(function (s) {
+  ['s-signin', 's-checking', 's-changepw', 's-gmail', 's-consent', 's-done'].forEach(function (s) {
     document.getElementById(s).style.display = s === id ? '' : 'none';
   });
 }
@@ -949,16 +1020,15 @@ function routeAfterLogin() {
     if (p.status !== 'active') return _logoutWith('Your account is suspended. Contact the administrator.');
     _profile = p;
     if (p.must_change_password) { showState('s-changepw'); return; }
-    if (!p.consent_given_at) { showState('s-consent'); return; }
+    if (!p.gmail_confirmed_at) { showState('s-gmail'); return; }
+    if (!p.consent_given_at) {
+      document.getElementById('consentGmail').textContent = p.gmail_address;
+      document.getElementById('connectWrap').style.display = 'none';
+      showState('s-consent'); return;
+    }
     showState('s-done');
     setTimeout(function () { bootApp(p.full_name); }, 700);
   }).catch(function (e) { showState('s-signin'); _msg('loginMsg', e.message); });
-}
-
-function doGiveConsent() {
-  _msg('consentMsg', ''); _busy('consentBtn', true);
-  sb.rpc('fn_give_consent').then(function (r) { _chk(r); _busy('consentBtn', false); return routeAfterLogin(); })
-    .catch(function (e) { _busy('consentBtn', false); _msg('consentMsg', e.message); });
 }
 
 function doChangePassword() {
@@ -1059,16 +1129,6 @@ function bootApp(email) {
   });
 
   document.getElementById('reportDate').addEventListener('change', fetchDispatchNo);
-
-  // Drag & drop
-  var zone = document.getElementById('fileZone');
-  zone.addEventListener('dragover',  function (e) { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', function ()  { zone.classList.remove('drag-over'); });
-  zone.addEventListener('drop', function (e) {
-    e.preventDefault(); zone.classList.remove('drag-over');
-    var f = e.dataTransfer.files[0];
-    if (f) { document.getElementById('fileInput').files = e.dataTransfer.files; handleFileSelect({ files: [f] }); }
-  });
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1297,72 +1357,6 @@ function _cmpReset() {
   document.getElementById('cmpSpin').className       = 'spin-sm';
 }
 
-function handleFileSelect(input) {
-  var f  = input.files ? input.files[0] : null;
-  var el = document.getElementById('fileSelected');
-
-  if (!f) {
-    _pendingFile = null; _compressing = false;
-    el.style.display = 'none';
-    _cmpReset();
-    return;
-  }
-
-  el.textContent   = '📎 ' + f.name + ' (' + (f.size / 1024).toFixed(1) + ' KB)';
-  el.style.display = 'block';
-
-  if (typeof DRCompress === 'undefined') {
-    // Compression module failed to load — safe fallback: use original file.
-    _pendingFile = f; _compressing = false;
-    return;
-  }
-
-  _pendingFile  = f;      // safe default while compression runs
-  _compressing  = true;
-
-  _cmpReset();
-  var box = document.getElementById('cmpBox');
-  var bar = document.getElementById('cmpBar');
-  var pct = document.getElementById('cmpPct');
-  var msg = document.getElementById('cmpStatusMsg');
-  box.style.display = 'block';
-
-  DRCompress.compressFile(f, function (p, statusMsg) {
-    bar.style.width  = p + '%';
-    pct.textContent  = p + '%';
-    msg.textContent  = statusMsg || '';
-  }).then(function (result) {
-    // Guard: if the user picked a different/new file while this one was
-    // still compressing, don't let a stale result overwrite it.
-    if (input.files && input.files[0] && input.files[0] !== f) return;
-
-    _pendingFile  = result.file;
-    _compressing  = false;
-
-    document.getElementById('cmpSpin').className   = '';
-    document.getElementById('cmpLabel').textContent = result.report.didCompress ? 'Compression complete' : 'Compression check complete';
-
-    el.textContent = '📎 ' + result.file.name + ' (' + (result.file.size / 1024).toFixed(1) + ' KB)';
-
-    document.getElementById('cmpOriginal').textContent    = result.report.originalSizeH;
-    document.getElementById('cmpFinal').textContent       = result.report.finalSizeH;
-    document.getElementById('cmpSaved').textContent       = result.report.didCompress
-      ? result.report.savedBytesH + ' (' + result.report.percent + '%)'
-      : '0 KB (0%)';
-    var statusEl = document.getElementById('cmpFinalStatus');
-    statusEl.textContent = result.report.statusText;
-    statusEl.className   = result.report.didCompress ? 'cmp-status-ok' : 'cmp-status-warn';
-
-    document.getElementById('cmpStats').style.display = 'block';
-  }).catch(function () {
-    // Should never happen (DRCompress.compressFile never rejects), but
-    // guarantee the original file is still usable either way.
-    _pendingFile  = f;
-    _compressing  = false;
-    box.style.display = 'none';
-  });
-}
-
 /* ═══════════════════════════════════════════════════
    SUBMIT DISPATCH
 ═══════════════════════════════════════════════════ */
@@ -1405,7 +1399,7 @@ function submitDispatch() {
       fileBase64:      b64   || '',
       fileName:        fname || '',
       fileMime:        fmime || '',
-      fileObj:         _pendingFile
+      fileObj:         _attached
     };
     callApi('processForm', { formData: formData }).then(function (r) {
       btn.disabled = false;
@@ -1424,7 +1418,7 @@ function submitDispatch() {
     });
   }
 
-  doSubmit('', _pendingFile ? _pendingFile.name : '', _pendingFile ? _pendingFile.type : '');
+  doSubmit('', _attached ? _attached.name : '', _attached ? _attached.mimeType : '');
 }
 
 function _resetDispatchForm() {
@@ -1434,7 +1428,6 @@ function _resetDispatchForm() {
   document.getElementById('schoolType').value = '';
   document.querySelectorAll('#officeCheckboxContainer input[type=checkbox]').forEach(function (cb) { cb.checked = false; });
   document.getElementById('otherOfficeWrap').style.display    = 'none';
-  document.getElementById('fileInput').value                  = '';
   document.getElementById('fileSelected').style.display       = 'none';
   _compressing = false;
   _cmpReset();
@@ -1444,7 +1437,7 @@ function _resetDispatchForm() {
   document.getElementById('schoolNameWrap').style.display     = 'none';
   document.getElementById('emisResult').style.display         = 'none';
   document.getElementById('formMsg').innerHTML                = '';
-  _pendingFile = null;
+  _attached = null;
   document.getElementById('reportDate').valueAsDate = new Date();
   fetchDispatchNo();
 }
@@ -1508,13 +1501,8 @@ function viewDetail(rowNum) {
 
 function dlFile(id) {
   var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
-  if (!rec || !rec.hasFile) { showToast('No file attached.', true); return; }
-  if (!rec.storagePath) { window.open(rec.fileUrl, '_blank', 'noopener'); return; }
-  var w = window.open('', '_blank');
-  sb.storage.from(BUCKET).createSignedUrl(rec.storagePath, 120).then(function (r) {
-    if (r.error) throw new Error(r.error.message);
-    if (w) w.location = r.data.signedUrl; else window.location = r.data.signedUrl;
-  }).catch(function (e) { if (w) w.close(); showToast('Could not open file: ' + e.message, true); });
+  if (!rec || !rec.fileUrl) { showToast('No file attached.', true); return; }
+  window.open(rec.fileUrl, '_blank', 'noopener');
 }
 
 function delReport(rowNum) {

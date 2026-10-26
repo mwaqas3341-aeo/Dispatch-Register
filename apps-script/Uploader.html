@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 14px; color: #14213d; background: #fff; }
+    h3 { margin: 0 0 6px; font-size: 1rem; }
+    p { margin: 4px 0 10px; font-size: .85rem; color: #4a5568; }
+    input[type=file] { width: 100%; padding: 10px; border: 1px dashed #8fa0c0; border-radius: 8px; box-sizing: border-box; }
+    button { width: 100%; margin-top: 10px; padding: 12px; border: 0; border-radius: 8px; background: #0b2a6b; color: #fff; font-weight: 700; font-size: .95rem; }
+    button:disabled { opacity: .55; }
+    #msg { margin-top: 10px; font-size: .85rem; min-height: 18px; }
+    .err { color: #c0392b; } .ok { color: #1e8449; }
+  </style>
+</head>
+<body>
+  <h3 id="title"></h3>
+  <p id="sub"></p>
+  <div id="uploadUi" style="display:none;">
+    <input type="file" id="f" accept="image/*,.pdf,.doc,.docx,.xlsx,.xls">
+    <button id="go">Upload to my Google Drive</button>
+  </div>
+  <div id="msg"></div>
+<script>
+  var P = <?!= params ?>;
+  var $ = function (id) { return document.getElementById(id); };
+  function post(o) { o.source = 'dispatch-uploader'; o.nonce = P.nonce; window.top.postMessage(o, P.allowed); }
+  function say(t, cls) { $('msg').className = cls || ''; $('msg').textContent = t; }
+
+  if (P.mode === 'connect') {
+    $('title').textContent = 'Connecting your Google Drive';
+    $('sub').textContent = 'Google will ask once for permission to save files this app creates.';
+    say('Please wait...');
+    google.script.run
+      .withSuccessHandler(function (r) { say('Connected as ' + r.email, 'ok'); post({ type: 'connected', email: r.email, folderId: r.folderId }); })
+      .withFailureHandler(function (e) { say(String(e && e.message || e), 'err'); post({ type: 'error', message: String(e && e.message || e) }); })
+      .connect();
+  } else {
+    $('title').textContent = 'Attach a file' + (P.label ? ' - ' + P.label : '');
+    $('sub').textContent = 'The file is saved in your own Google Drive, in the folder "Dispatch Register Files".';
+    $('uploadUi').style.display = 'block';
+  }
+
+  function prep(file) {
+    return new Promise(function (res) {
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 400 * 1024) return res(file);
+      var img = new Image(), u = URL.createObjectURL(file);
+      img.onload = function () {
+        var s = Math.min(1, 2000 / Math.max(img.width, img.height));
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(function (b) {
+          URL.revokeObjectURL(u);
+          res(b && b.size < file.size ? new File([b], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file);
+        }, 'image/jpeg', 0.72);
+      };
+      img.onerror = function () { res(file); };
+      img.src = u;
+    });
+  }
+
+  $('go').onclick = function () {
+    var file = $('f').files[0];
+    if (!file) { say('Please choose a file first.', 'err'); return; }
+    $('go').disabled = true; say('Preparing...');
+    prep(file).then(function (f) {
+      if (f.size > 10 * 1024 * 1024) { say('File is larger than 10 MB. Please choose a smaller file.', 'err'); $('go').disabled = false; return; }
+      var rd = new FileReader();
+      rd.onload = function () {
+        say('Uploading...');
+        google.script.run
+          .withSuccessHandler(function (r) {
+            say('Uploaded: ' + r.name, 'ok');
+            post({ type: 'uploaded', email: r.email, folderId: r.folderId,
+                   file: { id: r.id, name: r.name, mimeType: r.mimeType, size: r.size, webViewLink: r.webViewLink } });
+          })
+          .withFailureHandler(function (e) { say('Upload failed: ' + String(e && e.message || e), 'err'); $('go').disabled = false; })
+          .uploadFile(String(rd.result).split(',')[1], f.name, f.type);
+      };
+      rd.onerror = function () { say('Could not read the file.', 'err'); $('go').disabled = false; };
+      rd.readAsDataURL(f);
+    });
+  };
+</script>
+</body>
+</html>
