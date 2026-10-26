@@ -82,7 +82,8 @@ create trigger trg_recipients_guard before update on public.recipients for each 
 
 alter table public.recipients enable row level security;
 create policy recipients_select on public.recipients for select to authenticated
-  using ((public.fn_is_active() and public.fn_can_see_recipient(id)) or public.fn_is_admin());
+  using ((public.fn_is_active() and (owner_id = (select auth.uid()) or public.fn_can_see_recipient(id)))
+         or public.fn_is_admin());
 create policy recipients_insert on public.recipients for insert to authenticated with check (
   owner_id = (select auth.uid()) and public.fn_is_active() and exists (
     select 1 from public.user_profiles p where p.id = (select auth.uid()) and p.district = recipients.district

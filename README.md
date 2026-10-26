@@ -23,3 +23,8 @@ Frontend (this repo, GitHub Pages) + Supabase backend. Supabase stores users, th
 
 ## Not included
 Emailing dispatches to offices. It would need a Gmail-sending permission for every user (an extra Google warning screen), so it is left out until requested.
+
+## Sandbox status (branch `supabase-sandbox`)
+- Backend: separate Supabase project "Diary dispatch Module" (not connected to any other module).
+- `main` is the original Google Apps Script version, untouched.
+- Tests: `tests/smoke.js` (run `npm i jsdom@24 && node tests/smoke.js`) exercises login, first-login screens, admin tab and dispatch submit against a mocked backend. Database rules (per-user isolation, recipient scopes, admin-only functions) were tested directly in Supabase.
