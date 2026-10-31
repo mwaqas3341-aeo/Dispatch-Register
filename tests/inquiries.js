@@ -105,6 +105,22 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   w.caseTab('a'); w.delInquiry(db.dispatch_inquiries[1].id); await sleep(250);
   ok('delete inquiry soft-deletes it and its docs; others remain', db.dispatch_inquiries[1].record_status === 'deleted' && db.dispatch_documents.filter(d => d.inquiry_id).every(d => d.status === 'deleted') && (($('caseBody').textContent.match(/Inquiry \d/g)) || []).length === 3);
   ok('main-attachment logic untouched (hasFile ignores supporting docs)', w._lastReportData[0].hasFile === false);
+  // report detail shows the file; keyword search covers school name and EMIS code
+  db.dispatch_register[0].emis_code = '32220166'; db.dispatch_register[0].school_name = 'GGHS PINDI GHEB'; db.dispatch_register[0].remarks = 'rem';
+  db.dispatch_register[0].dispatch_documents = [{ id: 'N1', source: 'user_drive', status: 'active', doc_kind: 'main', file_name: 'scan.jpg', mime_type: 'image/jpeg' }];
+  const kw = async (v) => { $('filterKeyword').value = v; w.loadReports(); await sleep(250); return w._lastReportData.length; };
+  ok('keyword search finds by EMIS code', await kw('32220166') === 1);
+  ok('keyword search finds by school name (any case)', await kw('pindi gheb') === 1);
+  ok('keyword search with no match returns nothing', await kw('zzzz') === 0);
+  await kw('');
+  w.viewDetail('d1'); await sleep(300);
+  ok('detail view shows attachment name with View and Download', /scan\.jpg/.test($('detailBody').textContent) && /View/.test($('detailBody').textContent) && /Download/.test($('detailBody').textContent));
+  ok('detail view previews a JPG inline', !!$('detailBody').querySelector('#detailPreview img'));
+  db.dispatch_register[0].dispatch_documents[0].file_name = 'order.pdf'; db.dispatch_register[0].dispatch_documents[0].mime_type = 'application/pdf';
+  w.loadReports(); await sleep(250); w.viewDetail('d1'); await sleep(300);
+  ok('detail view previews a PDF inline', !!$('detailBody').querySelector('#detailPreview iframe'));
+  calls.length = 0; w.dlFile('d1', true); await sleep(100);
+  ok('Download button requests the file as a download', calls.some(c => c[0] === 'file' && c[1].download === true));
   // old attachments imported from the previous system
   db.dispatch_register[0].dispatch_documents = [{ id: 'L1', source: 'legacy_url', legacy_url: 'https://drive.google.com/file/d/abc/view', status: 'active', doc_kind: 'main' }];
   w.loadReports(); await sleep(300);
