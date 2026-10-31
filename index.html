@@ -571,7 +571,7 @@
             <div class="col-6"><label class="lbl">From Date</label><input type="date" id="fromDate" class="inp"></div>
             <div class="col-6"><label class="lbl">To Date</label><input type="date" id="toDate" class="inp"></div>
             <div class="col-6"><label class="lbl">Office</label><select id="filterOffice" class="inp"><option value="">All Offices</option></select></div>
-            <div class="col-6"><label class="lbl">Keyword</label><input type="text" id="filterKeyword" class="inp" placeholder="Search..." onkeydown="if(event.key==='Enter')loadReports()"></div>
+            <div class="col-6"><label class="lbl">Keyword</label><input type="text" id="filterKeyword" class="inp" placeholder="Office, subject, school name, EMIS code, person..." onkeydown="if(event.key==='Enter')loadReports()"></div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
             <button class="btn btn-pr" onclick="loadReports()"><i class="fas fa-search"></i> Search</button>
@@ -829,13 +829,13 @@ function _mapRecord(x, i) {
            description: x.subject || '', remarks: x.remarks || '', emisCode: x.emis_code || '',
            accusedName: x.concerned_person || '', schoolType: x.school_type || '', schoolName: x.school_name || '',
            hasFile: !!doc && (doc.source !== 'legacy_url' || _legacyOk(doc.legacy_url)),
-           fileDocId: doc && doc.source !== 'legacy_url' ? doc.id : '', fileLegacy: doc && doc.source === 'legacy_url' && _legacyOk(doc.legacy_url) ? doc.legacy_url : '',
+           fileDocId: doc && doc.source !== 'legacy_url' ? doc.id : '', fileName: doc ? (doc.file_name || '') : '', fileMime: doc ? (doc.mime_type || '') : '', fileLegacy: doc && doc.source === 'legacy_url' && _legacyOk(doc.legacy_url) ? doc.legacy_url : '',
            deletedDate: x.deleted_at ? new Date(x.deleted_at).toLocaleString('en-GB') : '' };
 }
 function _legacyOk(u) { return /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || '')); }   // old attachments live in the previous Drive
 var REC_SELECT = 'id,dispatch_date,dispatch_no,category,subject,remarks,school_type,emis_code,school_name,' +
   'concerned_person,other_office_name,deleted_at,dispatch_recipients(name_snapshot),' +
-  'dispatch_documents(id,legacy_url,source,status,doc_kind)';
+  'dispatch_documents(id,legacy_url,source,status,doc_kind,file_name,mime_type)';
 
 var API = {
   getAdminConfig: function () {
@@ -935,7 +935,7 @@ var API = {
       var off = (f.office || '').toLowerCase(), kw = (f.keyword || '').toLowerCase();
       if (off && off !== 'other') rows = rows.filter(function (x) { return x.selectOffice.toLowerCase().indexOf(off) !== -1; });
       if (kw) rows = rows.filter(function (x) {
-        return [x.selectOffice, x.category, x.description, x.accusedName].join(' ').toLowerCase().indexOf(kw) !== -1;
+        return [x.selectOffice, x.category, x.description, x.remarks, x.accusedName, x.schoolName, x.emisCode, x.schoolType, x.dispatchNo].join(' ').toLowerCase().indexOf(kw) !== -1;
       });
       rows.forEach(function (x, i) { x.srNo = i + 1; });
       return { records: rows };
@@ -1812,15 +1812,40 @@ function viewDetail(rowNum) {
     return pair[1]
       ? '<div class="detail-row"><span class="detail-label">' + pair[0] + '</span><span class="detail-val">' + esc(pair[1]) + '</span></div>'
       : '';
-  }).join('');
+  }).join('') +
+  (rec.hasFile
+    ? '<div class="detail-row"><span class="detail-label">Attachment</span><span class="detail-val">' + (rec.fileName ? esc(rec.fileName) + '<br>' : '') +
+      '<button class="btn btn-ok" onclick="dlFile(\'' + rec.rowNum + '\')"><i class="fas fa-eye"></i> View</button> ' +
+      '<button class="btn btn-out" onclick="dlFile(\'' + rec.rowNum + '\',true)"><i class="fas fa-download"></i> Download</button></span></div><div id="detailPreview" style="margin-top:8px;"></div>'
+    : '<div class="detail-row"><span class="detail-label">Attachment</span><span class="detail-val">None</span></div>') +
+  '<div style="margin-top:10px;"><button class="btn btn-out" onclick="closeModal(\'detailModal\');openCase(\'' + rec.rowNum + '\')"><i class="fas fa-folder-open"></i> Action Taken &amp; Supporting Documents</button></div>';
   openModal('detailModal');
+  showAttachmentPreview(rec);
 }
 
-function dlFile(id) {
+/* inline preview of the attached picture or PDF inside the detail view (new files only; old links use the View button) */
+var _prevUrl = '';
+function showAttachmentPreview(rec) {
+  if (_prevUrl) { URL.revokeObjectURL(_prevUrl); _prevUrl = ''; }
+  var box = document.getElementById('detailPreview');
+  if (!box || !rec.fileDocId || !/^(image\/(jpeg|png)|application\/pdf)$/.test(rec.fileMime)) return;
+  box.innerHTML = '<span class="spin-sm"></span> Loading preview...';
+  driveCall('file', { id: rec.fileDocId, download: false }).then(function (r) {
+    if (!r.ok) throw new Error('Preview not available');
+    return r.blob();
+  }).then(function (blob) {
+    _prevUrl = URL.createObjectURL(blob);
+    box.innerHTML = rec.fileMime === 'application/pdf'
+      ? '<iframe src="' + _prevUrl + '" title="Attachment" style="width:100%;height:60vh;border:1px solid var(--border);border-radius:8px;"></iframe>'
+      : '<img src="' + _prevUrl + '" alt="Attachment" style="max-width:100%;border:1px solid var(--border);border-radius:8px;">';
+  }).catch(function () { box.innerHTML = '<span style="font-size:.8rem;color:var(--sub);">Preview not available. Use View or Download.</span>'; });
+}
+
+function dlFile(id, download) {
   var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
   if (rec && rec.fileLegacy) { window.open(rec.fileLegacy, '_blank', 'noopener'); return; }   // old attachment (opens in the previous Google Drive)
   if (!rec || !rec.fileDocId) { showToast('No file attached.', true); return; }
-  driveOpenDoc(rec.fileDocId, false);
+  driveOpenDoc(rec.fileDocId, !!download, rec.fileName);
 }
 
 /* ═══════════════════════════════════════════════════
