@@ -828,12 +828,14 @@ function _mapRecord(x, i) {
            dispatchNo: fmtNo(x.dispatch_no), selectOffice: offices.join(', '), category: x.category || '',
            description: x.subject || '', remarks: x.remarks || '', emisCode: x.emis_code || '',
            accusedName: x.concerned_person || '', schoolType: x.school_type || '', schoolName: x.school_name || '',
-           hasFile: !!doc, fileDocId: doc ? doc.id : '',
+           hasFile: !!doc && (doc.source !== 'legacy_url' || _legacyOk(doc.legacy_url)),
+           fileDocId: doc && doc.source !== 'legacy_url' ? doc.id : '', fileLegacy: doc && doc.source === 'legacy_url' && _legacyOk(doc.legacy_url) ? doc.legacy_url : '',
            deletedDate: x.deleted_at ? new Date(x.deleted_at).toLocaleString('en-GB') : '' };
 }
+function _legacyOk(u) { return /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || '')); }   // old attachments live in the previous Drive
 var REC_SELECT = 'id,dispatch_date,dispatch_no,category,subject,remarks,school_type,emis_code,school_name,' +
   'concerned_person,other_office_name,deleted_at,dispatch_recipients(name_snapshot),' +
-  'dispatch_documents(id,legacy_url,status,doc_kind)';
+  'dispatch_documents(id,legacy_url,source,status,doc_kind)';
 
 var API = {
   getAdminConfig: function () {
@@ -1330,7 +1332,8 @@ function schoolsImport(commit) {
     var spec = { emis: [/emis/], name: [/^s_name$/, /school.?name/, /^name$/], district: [/^d_name$/, /district/], tehsil: [/^t_name$/, /tehsil/],
       markaz: [/^m_name$/, /markaz/], wing: [/^w_name$/, /wing/], level: [/^s_level$/, /level/], gender_type: [/^s_type$/, /gender/, /^type$/], area: [/^s_area$/, /area/] };
     var rows = null, c = null;
-    wb.SheetNames.forEach(function (n) {
+    var order = wb.SheetNames.filter(function (n) { return /school/i.test(n); }).concat(wb.SheetNames.filter(function (n) { return !/school/i.test(n); }));
+    order.forEach(function (n) {
       if (rows) return;
       var g = _grid(wb.Sheets[n]); if (!g.length) return;
       var h = g[0].map(function (x) { return _txt(x).toLowerCase(); }), cc = _cols(h, spec);
@@ -1343,7 +1346,7 @@ function schoolsImport(commit) {
       if (e.length !== 8 || !nm) { if (_txt(r[c.emis]) || nm) bad++; return; }
       if (seen[e]) return; seen[e] = 1;
       var o = { emis_code: e, name: nm };
-      ['district', 'tehsil', 'markaz', 'wing', 'level', 'gender_type', 'area'].forEach(function (k) { if (c[k] >= 0) o[k] = _txt(r[c[k]]) || null; });
+      ['district', 'tehsil', 'markaz', 'wing', 'level', 'gender_type', 'area'].forEach(function (k) { if (c[k] >= 0) { var tv = _txt(r[c[k]]); o[k] = tv && tv !== '\\N' ? tv : null; } });
       good.push(o);
     });
     if (!commit) { rep.innerHTML = 'Found <b>' + good.length + '</b> valid schools; <b>' + bad + '</b> rows skipped (missing name or EMIS not 8 digits). Nothing saved.'; return; }
@@ -1815,6 +1818,7 @@ function viewDetail(rowNum) {
 
 function dlFile(id) {
   var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
+  if (rec && rec.fileLegacy) { window.open(rec.fileLegacy, '_blank', 'noopener'); return; }   // old attachment (opens in the previous Google Drive)
   if (!rec || !rec.fileDocId) { showToast('No file attached.', true); return; }
   driveOpenDoc(rec.fileDocId, false);
 }
