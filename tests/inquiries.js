@@ -105,6 +105,14 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   w.caseTab('a'); w.delInquiry(db.dispatch_inquiries[1].id); await sleep(250);
   ok('delete inquiry soft-deletes it and its docs; others remain', db.dispatch_inquiries[1].record_status === 'deleted' && db.dispatch_documents.filter(d => d.inquiry_id).every(d => d.status === 'deleted') && (($('caseBody').textContent.match(/Inquiry \d/g)) || []).length === 3);
   ok('main-attachment logic untouched (hasFile ignores supporting docs)', w._lastReportData[0].hasFile === false);
+  // old attachments imported from the previous system
+  db.dispatch_register[0].dispatch_documents = [{ id: 'L1', source: 'legacy_url', legacy_url: 'https://drive.google.com/file/d/abc/view', status: 'active', doc_kind: 'main' }];
+  w.loadReports(); await sleep(300);
+  ok('legacy Drive link counts as an attachment and opens directly', w._lastReportData[0].hasFile && w._lastReportData[0].fileLegacy.indexOf('drive.google.com') > 0);
+  w.__opened = ''; w.dlFile('d1'); ok('legacy attachment opens the old Drive link', /drive\.google\.com\/file\/d\/abc/.test(w.__opened || ''));
+  db.dispatch_register[0].dispatch_documents = [{ id: 'L2', source: 'legacy_url', legacy_url: 'No copy was kept for record', status: 'active', doc_kind: 'main' }];
+  w.loadReports(); await sleep(300);
+  ok('"No copy was kept" is not shown as a file', w._lastReportData[0].hasFile === false);
   // optional in-account password change
   w.openPwModal(); ok('change-password modal opens from inside the app', $('pwModal').classList.contains('open'));
   const tryPw = (c, a, b2) => { $('curPw').value = c; $('newPw').value = a; $('newPw2').value = b2; w.doChangePassword(); return $('pwMsg').textContent; };
