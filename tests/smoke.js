@@ -73,7 +73,7 @@ const login = (c) => { c.w.document.getElementById('loginCnic').value = '1111111
     c.finish();
   });
   console.log('1 errors:', JSON.stringify(r.errors));
-  for (const [label, ov, expect] of [['must change password', { must_change_password: true }, 's-changepw'], ['no gmail', { gmail_confirmed_at: null }, 's-gmail'], ['no drive consent', { consent_given_at: null }, 's-consent']]) {
+  for (const [label, ov, expect] of [['legacy must_change_password flag is ignored', { must_change_password: true }, 's-done'], ['no gmail', { gmail_confirmed_at: null }, 's-gmail'], ['no drive consent', { consent_given_at: null }, 's-consent']]) {
     r = await run(ov, async (c) => { await sleep(200); login(c); await sleep(700);
       console.log('2', label, '-> shows', expect + ':', c.vis(expect), '| app still hidden:', c.w.document.getElementById('mainApp').style.display !== 'block'); c.finish(); });
     if (r.errors.length) console.log('2 errors', JSON.stringify(r.errors));

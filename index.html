@@ -378,17 +378,6 @@
       <p class="sub"><span class="spin-ring"></span> Checking your account...</p>
     </div>
 
-    <!-- s-changepw -->
-    <div id="s-changepw" style="display:none;">
-      <div class="setup-icon si-gold"><i class="fas fa-key"></i></div>
-      <h2>Set a New Password</h2>
-      <p class="sub">Your first password was your CNIC. Choose a new one now (at least 8 characters, not only digits).</p>
-      <input class="sin" id="newPw" type="password" placeholder="New password" autocomplete="new-password">
-      <input class="sin" id="newPw2" type="password" placeholder="Repeat new password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doChangePassword()">
-      <div class="setup-msg" id="pwMsg"></div>
-      <button class="btn-allow" id="pwBtn" onclick="doChangePassword()"><i class="fas fa-check-circle" style="margin-right:8px;"></i>Save Password</button>
-    </div>
-
     <!-- s-gmail -->
     <div id="s-gmail" style="display:none;">
       <div class="setup-icon si-gold"><i class="fab fa-google"></i></div>
@@ -443,6 +432,7 @@
         <div class="user-avatar" id="userInitial">?</div>
         <span class="chip-email" id="userEmailTop">—</span>
       </div>
+ <button class="signout-btn" onclick="openPwModal()" title="Change password"><i class="fas fa-key"></i></button>
       <button class="signout-btn" onclick="openDriveSettings()" title="Google Drive connection"><i class="fab fa-google-drive"></i></button>
       <button class="signout-btn" onclick="signOut()" title="Sign out"><i class="fas fa-sign-out-alt"></i></button>
     </div>
@@ -710,6 +700,20 @@
     </div>
     <div class="modal-body" id="detailBody"></div>
     <div class="modal-foot"><button class="btn btn-out" onclick="closeModal('detailModal')">Close</button></div>
+  </div>
+</div>
+
+<!-- Change password modal (optional, from inside the account) -->
+<div class="modal-overlay" id="pwModal">
+  <div class="modal-box">
+    <div class="modal-head"><h4><i class="fas fa-key"></i> Change password</h4><button class="modal-close" onclick="closeModal('pwModal')"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body">
+      <label class="lbl">Current password</label><input class="inp" id="curPw" type="password" autocomplete="current-password" style="margin-bottom:10px;">
+      <label class="lbl">New password (at least 8 characters, not only digits)</label><input class="inp" id="newPw" type="password" autocomplete="new-password" style="margin-bottom:10px;">
+      <label class="lbl">Repeat new password</label><input class="inp" id="newPw2" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doChangePassword()">
+      <div id="pwMsg" style="color:var(--red);font-size:.82rem;margin-top:8px;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-out" onclick="closeModal('pwModal')">Cancel</button><button class="btn btn-ok" id="pwBtn" onclick="doChangePassword()"><i class="fas fa-save"></i> Save password</button></div>
   </div>
 </div>
 
@@ -1150,7 +1154,7 @@ function doConfirmGmail() {
    LOGIN (CNIC + password) AND FIRST-LOGIN STEPS
 ═══════════════════════════════════════════════════ */
 function showState(id) {
-  ['s-signin', 's-checking', 's-changepw', 's-gmail', 's-consent', 's-done'].forEach(function (s) {
+  ['s-signin', 's-checking', 's-gmail', 's-consent', 's-done'].forEach(function (s) {
     document.getElementById(s).style.display = s === id ? '' : 'none';
   });
 }
@@ -1198,7 +1202,6 @@ function routeAfterLogin() {
     if (!p) return _logoutWith('Your account has no profile. Contact the administrator.');
     if (p.status !== 'active') return _logoutWith('Your account is suspended. Contact the administrator.');
     _profile = p;
-    if (p.must_change_password) { showState('s-changepw'); return; }
     if (!p.gmail_confirmed_at) { showState('s-gmail'); return; }
     if (!p.consent_given_at) {
       document.getElementById('consentGmail').textContent = p.gmail_address;
@@ -1209,16 +1212,21 @@ function routeAfterLogin() {
   }).catch(function (e) { showState('s-signin'); _msg('loginMsg', e.message); });
 }
 
+function openPwModal() {
+  ['curPw', 'newPw', 'newPw2'].forEach(function (i) { document.getElementById(i).value = ''; });
+  _msg('pwMsg', ''); openModal('pwModal');
+}
 function doChangePassword() {
-  var a = document.getElementById('newPw').value, b = document.getElementById('newPw2').value;
+  var c = document.getElementById('curPw').value, a = document.getElementById('newPw').value, b = document.getElementById('newPw2').value;
   _msg('pwMsg', '');
+  if (!c) { _msg('pwMsg', 'Enter your current password.'); return; }
   if (a.length < 8) { _msg('pwMsg', 'Password must be at least 8 characters.'); return; }
+  if (/^[0-9]+$/.test(a)) { _msg('pwMsg', 'Choose a password that is not only digits.'); return; }
   if (a !== b) { _msg('pwMsg', 'The two passwords do not match.'); return; }
   _busy('pwBtn', true);
-  sb.functions.invoke('change-password', { body: { new_password: a } }).then(_fnResult).then(function () {
-    _busy('pwBtn', false);
-    document.getElementById('newPw').value = ''; document.getElementById('newPw2').value = '';
-    return sb.auth.refreshSession().then(routeAfterLogin);
+  sb.functions.invoke('change-password', { body: { current_password: c, new_password: a } }).then(_fnResult).then(function () {
+    _busy('pwBtn', false); closeModal('pwModal'); showToast('Password changed.');
+    ['curPw', 'newPw', 'newPw2'].forEach(function (i) { document.getElementById(i).value = ''; });
   }).catch(function (e) { _busy('pwBtn', false); _msg('pwMsg', e.message); });
 }
 

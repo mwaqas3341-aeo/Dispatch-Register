@@ -13,7 +13,7 @@ create table public.user_profiles (
   wing text check (wing is null or wing in ('M-EE','W-EE','SE')), markaz text,
   role text not null default 'user' check (role in ('user','admin')),
   status text not null default 'active' check (status in ('active','suspended')),
-  must_change_password boolean not null default true,
+  must_change_password boolean not null default false,
   gmail_address text check (gmail_address is null or gmail_address ~* '^[^@[:space:]]+@(gmail|googlemail)\.com$'),
   gmail_confirmed_at timestamptz,
   drive_folder_id text,
@@ -251,3 +251,5 @@ end $$;
 -- See supabase/migrations/20261030_action_taken_and_documents.sql: table dispatch_inquiries (many per report, soft delete),
 -- dispatch_documents.doc_kind ('main'|'supporting'|'inquiry') + inquiry_id + drive_path, RPCs fn_add_inquiry / fn_update_inquiry /
 -- fn_delete_inquiry / fn_delete_document. Writes go through the RPCs; RLS limits everything to the report's owner.
+
+-- 2026-10-31: forced password change removed (see migrations/20261031_no_forced_password_change.sql); fn_is_active/fn_is_admin no longer look at must_change_password.

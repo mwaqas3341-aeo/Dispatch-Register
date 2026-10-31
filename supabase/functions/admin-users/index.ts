@@ -22,8 +22,8 @@ Deno.serve(async (req) => {
     if (ue || !u?.user) return json({ error: "Unauthorized" }, 401);
 
     const { data: me } = await admin.from("user_profiles")
-      .select("id, role, status, must_change_password").eq("id", u.user.id).maybeSingle();
-    if (!me || me.role !== "admin" || me.status !== "active" || me.must_change_password)
+      .select("id, role, status").eq("id", u.user.id).maybeSingle();
+    if (!me || me.role !== "admin" || me.status !== "active")
       return json({ error: "Administrator access required" }, 403);
 
     const body = await req.json();
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
         id: created.user.id, cnic, full_name, district: district.toUpperCase(),
         designation: clean(body.designation), cell_no: clean(body.cell_no),
         tehsil: clean(body.tehsil)?.toUpperCase() ?? null, wing, markaz: clean(body.markaz),
-        role: "user", status: "active", must_change_password: true, created_by: me.id,
+        role: "user", status: "active", created_by: me.id,
       });
       if (pe) {
         await admin.auth.admin.deleteUser(created.user.id);
@@ -65,7 +65,6 @@ Deno.serve(async (req) => {
       if (!p) return json({ error: "User not found" }, 404);
       const { error } = await admin.auth.admin.updateUserById(p.id, { password: p.cnic });
       if (error) return json({ error: error.message }, 400);
-      await admin.from("user_profiles").update({ must_change_password: true }).eq("id", p.id);
       return json({ success: true });
     }
 
