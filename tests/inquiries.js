@@ -129,6 +129,20 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   db.dispatch_register[0].dispatch_documents = [{ id: 'L2', source: 'legacy_url', legacy_url: 'No copy was kept for record', status: 'active', doc_kind: 'main' }];
   w.loadReports(); await sleep(300);
   ok('"No copy was kept" is not shown as a file', w._lastReportData[0].hasFile === false);
+  // compression is applied before every upload
+  const seen = []; w.DRCompress = { formatBytes: (n) => Math.round(n / 1024) + ' KB',
+    compressFile: (f, cb) => { seen.push(f.name); cb && cb(50, 'Compressing...'); const small = new w.File(['x'], f.name, { type: f.type }); Object.defineProperty(small, 'size', { value: Math.round(f.size / 4) });
+      return Promise.resolve({ file: small, report: { originalSize: f.size, finalSize: small.size, savedBytes: f.size - small.size, percent: 75, originalSizeH: 'orig', finalSizeH: 'final', savedBytesH: 'saved', statusText: 'Compressed' } }); } };
+  const big = new w.File(['x'], 'photo.jpg', { type: 'image/jpeg' }); Object.defineProperty(big, 'size', { value: 12 * 1024 * 1024 });
+  ok('a 12 MB photo is accepted before compression', !w._checkFile(big, true));
+  ok('...but would be refused at 12 MB after compression', /10 MB/.test(w._checkFile(big, false)));
+  const huge = new w.File(['x'], 'huge.jpg', { type: 'image/jpeg' }); Object.defineProperty(huge, 'size', { value: 31 * 1024 * 1024 });
+  ok('anything over 30 MB is refused up front', /30 MB/.test(w._checkFile(huge, true)));
+  const cres = await w.compressForUpload(big, () => {});
+  ok('compressForUpload returns the smaller file and marks it so it is not compressed twice', cres.file.size === 3 * 1024 * 1024 && cres.file._compressed === true && cres.saved === 9 * 1024 * 1024);
+  const again = await w.compressForUpload(cres.file, () => {}); ok('already compressed files are not compressed again', again.file === cres.file && seen.length === 1);
+  pickQueue.push([big]); w.pickAttachment(); await sleep(300);
+  ok('new-dispatch attachment is compressed on selection and the stats are shown', w._attached && w._attached.size === 3 * 1024 * 1024 && /orig/.test($('cmpOriginal').textContent) && /Compressed/.test($('cmpFinalStatus').textContent));
   // optional in-account password change
   w.openPwModal(); ok('change-password modal opens from inside the app', $('pwModal').classList.contains('open'));
   const tryPw = (c, a, b2) => { $('curPw').value = c; $('newPw').value = a; $('newPw2').value = b2; w.doChangePassword(); return $('pwMsg').textContent; };
