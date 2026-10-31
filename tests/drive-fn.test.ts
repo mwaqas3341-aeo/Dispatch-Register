@@ -1,7 +1,7 @@
 // Edge Function test with mocked Supabase REST/Auth and mocked Google. Run: deno test --allow-all tests/drive-fn.test.ts
 const SB = "https://proj.supabase.co";
 Deno.env.set("SUPABASE_URL", SB); Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "svc");
-Deno.env.set("GOOGLE_CLIENT_ID", "cid"); Deno.env.set("GOOGLE_CLIENT_SECRET", "sec"); Deno.env.set("APP_URL", "https://app.example/");
+Deno.env.set("GOOGLE_CLIENT_ID", "cid"); Deno.env.set("GOOGLE_CLIENT_SECRET", "sec"); Deno.env.set("APP_URL", "https://app.example/"); Deno.env.set("BREVO_API_KEY", "bk"); Deno.env.set("BREVO_SENDER_EMAIL", "sender@example.pk");
 Deno.env.set("TOKEN_ENC_KEY", btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))));
 
 let handler!: (r: Request) => Promise<Response>;
@@ -16,7 +16,7 @@ const T: Record<string, any[]> = {
   dispatch_inquiries: [{ id: "q1", dispatch_id: "d1", user_id: "u1", inquiry_no: 2, record_status: "active" }],
   dispatch_documents: [], google_drive_connections: [], oauth_states: [],
 };
-const log: string[] = []; let failDocInsert = false; let googleRefreshError = false; let googleEmail = "one@gmail.com"; let scope = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send"; let gmailStatus = 200; const mails: string[] = [];
+const log: string[] = []; let failDocInsert = false; let googleRefreshError = false; let googleEmail = "one@gmail.com"; let scope = "openid email https://www.googleapis.com/auth/drive.file"; let gmailStatus = 200; const mails: any[] = [];
 let seq = 0; const folders: Record<string, string> = {};
 
 function match(row: any, q: URLSearchParams) {
@@ -53,7 +53,7 @@ async function mockFetch(input: any, init: any = {}): Promise<Response> {
     if (b.get("grant_type") === "refresh_token") return googleRefreshError ? J({ error: "invalid_grant" }, 400) : J({ access_token: "at-" + b.get("refresh_token") });
     return J({ access_token: "at1", refresh_token: "RT-SECRET-1", scope });
   }
-  if (url.host === "gmail.googleapis.com") { if (gmailStatus !== 200) return J({ error: { message: "insufficientPermissions" } }, gmailStatus); mails.push(JSON.parse(init.body).raw); return J({ id: "m" + (++seq) }); }
+  if (url.host === "api.brevo.com") { if (gmailStatus !== 200) return J({ message: "x" }, gmailStatus); mails.push(JSON.parse(init.body)); return J({ messageId: "m" + (++seq) }, 201); }
   if (url.host === "oauth2.googleapis.com" && url.pathname === "/revoke") { log.push("revoke"); return J({}); }
   if (url.host === "openidconnect.googleapis.com") return J({ email: googleEmail });
   if (url.host === "www.googleapis.com" && url.pathname === "/drive/v3/files" && method === "GET") {
@@ -94,7 +94,7 @@ Deno.test("full flow", async () => {
   googleEmail = "one@gmail.com"; scope = "openid email";
   r = await call("start", "tok-u1"); const s2 = new URL((await r.json()).url).searchParams.get("state")!;
   r = await handler(new Request(`${SB}/functions/v1/drive?code=c&state=${s2}`)); ok(/drive=error/.test(r.headers.get("location")!), "callback rejects when Drive permission not granted");
-  scope = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send";
+  scope = "openid email https://www.googleapis.com/auth/drive.file";
   r = await call("start", "tok-u1"); const s3 = new URL((await r.json()).url).searchParams.get("state")!;
   r = await handler(new Request(`${SB}/functions/v1/drive?code=c&state=${s3}`)); ok(/drive=connected/.test(r.headers.get("location")!), "callback connects");
   const c = T.google_drive_connections[0];
@@ -131,13 +131,13 @@ Deno.test("full flow", async () => {
   r = await call("send", "tok-u2", { dispatch_id: "d1" }); ok(r.status === 404, "another user cannot send mail for my report");
   r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json();
   ok(j.sent === 1 && j.no_email === 2 && mails.length === 1, "one email sent; offices without an address recorded as no_email");
-  const raw = new TextDecoder().decode(Uint8Array.from(atob(mails[0].replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
-  ok(/From: User One <one@gmail.com>/.test(raw) && /To: deo@example.pk, deo.personal@example.pk/.test(raw) && /filename="complaint.pdf"/.test(raw) && /Dispatch No\. 0007\/2026/.test(raw), "message is from the user's Gmail, to the office addresses, with the attachment");
+  const m = mails[0];
+  ok(m.sender.email === "sender@example.pk" && m.replyTo.email === "one@gmail.com" && m.to.map((x: any) => x.email).join() === "deo@example.pk,deo.personal@example.pk" && m.attachment[0].name === "complaint.pdf" && /Dispatch No\. 0007\/2026/.test(m.subject), "email via Brevo: verified sender, reply-to is the user's Gmail, office addresses, attachment");
   ok(T.dispatch_recipients.find((x) => x.id === "dr1").email_status === "sent" && T.dispatch_recipients.find((x) => x.id === "dr2").email_status === "no_email", "per-recipient status saved");
   r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json(); ok(mails.length === 1, "retry does not send duplicates to offices already emailed");
-  T.dispatch_recipients.find((x) => x.id === "dr1").email_status = "failed"; gmailStatus = 403;
-  r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json(); ok(r.status === 409 && j.code === "DRIVE_RECONNECT" && T.google_drive_connections[0].can_send === false, "missing send permission -> reconnect prompt");
-  gmailStatus = 200; T.google_drive_connections[0].can_send = true;
+  T.dispatch_recipients.find((x) => x.id === "dr1").email_status = "failed"; gmailStatus = 500;
+  r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json(); ok(r.status === 200 && j.failed === 1 && T.dispatch_recipients.find((x) => x.id === "dr1").email_status === "failed", "provider error is recorded as failed, not lost");
+  gmailStatus = 200; r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json(); ok(j.sent === 1 && mails.length === 2, "retry sends only the failed office");
 
   // expired / revoked
   googleRefreshError = true;

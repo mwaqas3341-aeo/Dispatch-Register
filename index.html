@@ -408,8 +408,6 @@
         <span><strong>Upload, view and delete</strong> only the files this app creates.</span></div>
       <div class="perm-item"><span class="pi-icon"><i class="fas fa-folder-plus"></i></span>
         <span><strong>Create folders</strong> named "Dispatch_Register" (one per report inside it).</span></div>
-      <div class="perm-item"><span class="pi-icon"><i class="fas fa-paper-plane"></i></span>
-        <span><strong>Send email</strong> from your Gmail to the offices you select. The app cannot read your mail.</span></div>
       <div class="perm-item"><span class="pi-icon"><i class="fas fa-lock"></i></span>
         <span>The app can only see files it creates itself, never the rest of your Drive.</span></div>
       <div class="setup-msg" id="consentMsg"></div>
@@ -1105,13 +1103,12 @@ function openDriveSettings() {
   sb.rpc('fn_my_drive_connection').then(function (r) {
     var c = (_chk(r) || [])[0];
     var st = c ? c.connection_status : 'none';
-    if (c && st === 'connected' && !c.can_send) st = 'needs_reconnect';
     var label = { connected: 'Connected', needs_reconnect: 'Needs reconnecting (expired or revoked)', disconnected: 'Disconnected', none: 'Not connected' }[st];
     var color = st === 'connected' ? 'var(--green)' : 'var(--red)';
     b.innerHTML = '<div class="detail-row"><span class="detail-label">Status</span><span class="detail-val" style="color:' + color + ';font-weight:800;">' + label + '</span></div>' +
       '<div class="detail-row"><span class="detail-label">Google account</span><span class="detail-val">' + esc(c ? c.google_email : (_profile && _profile.gmail_address) || '') + '</span></div>' +
       (c && c.connected_at ? '<div class="detail-row"><span class="detail-label">Connected on</span><span class="detail-val">' + new Date(c.connected_at).toLocaleDateString('en-GB') + '</span></div>' : '') +
-      '<p style="font-size:.8rem;color:var(--sub);margin:10px 0;">Files are kept in your own Google Drive under "Dispatch_Register", and dispatch emails are sent from this Gmail. Disconnecting never deletes your reports, records or Drive files.</p>' +
+      '<p style="font-size:.8rem;color:var(--sub);margin:10px 0;">Files are kept in your own Google Drive under "Dispatch_Register". Dispatch emails to offices are sent by the app, with this Gmail as the reply-to address. Disconnecting never deletes your reports, records or Drive files.</p>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
       '<button class="btn btn-ok" onclick="startConnect2()"><i class="fas fa-link"></i> ' + (st === 'connected' ? 'Reconnect' : 'Connect') + ' Google Drive</button>' +
       (st === 'connected' ? '<button class="btn btn-out" onclick="disconnectDrive()"><i class="fas fa-unlink"></i> Disconnect</button>' : '') + '</div>' +
