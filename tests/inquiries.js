@@ -105,6 +105,14 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   w.caseTab('a'); w.delInquiry(db.dispatch_inquiries[1].id); await sleep(250);
   ok('delete inquiry soft-deletes it and its docs; others remain', db.dispatch_inquiries[1].record_status === 'deleted' && db.dispatch_documents.filter(d => d.inquiry_id).every(d => d.status === 'deleted') && (($('caseBody').textContent.match(/Inquiry \d/g)) || []).length === 3);
   ok('main-attachment logic untouched (hasFile ignores supporting docs)', w._lastReportData[0].hasFile === false);
+  // optional in-account password change
+  w.openPwModal(); ok('change-password modal opens from inside the app', $('pwModal').classList.contains('open'));
+  const tryPw = (c, a, b2) => { $('curPw').value = c; $('newPw').value = a; $('newPw2').value = b2; w.doChangePassword(); return $('pwMsg').textContent; };
+  ok('needs current password', /current/.test(tryPw('', 'abcdefg1', 'abcdefg1')));
+  ok('rejects short / digits-only / mismatch', /8 characters/.test(tryPw('x', 'abc', 'abc')) && /digits/.test(tryPw('x', '123456789', '123456789')) && /match/.test(tryPw('x', 'abcdefg1', 'abcdefg2')));
+  tryPw('oldpass', 'abcdefg1', 'abcdefg1'); await sleep(200);
+  ok('valid change closes the modal', !$('pwModal').classList.contains('open'));
+  ok('no forced password screen exists', !$('s-changepw'));
   ok('no script errors', errors.length === 0, JSON.stringify(errors));
   console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.log('threw', e); process.exit(1); });
