@@ -2,7 +2,7 @@
 
 Frontend (this repo, GitHub Pages) + Supabase backend. Supabase stores users, the register, recipients and file **links** only. Files live in each user's own Google Drive.
 
-- **Login:** CNIC + password (Supabase Auth). Users are created by the administrator; the initial password is the CNIC and must be changed at first login.
+- **Login:** CNIC + password (Supabase Auth). Users are created by the administrator; the initial password is the CNIC. Changing it is optional and done from inside the account (key icon, asks for the current password).
 - **First login:** the user confirms their own Gmail, then sees a "Permissions Needed" screen (upload files, create one folder). Google asks once.
 - **Files:** a small Apps Script page (`apps-script/`) runs *as the signed-in Google user* and saves the file in that user's Drive, folder "Dispatch Register Files". Scope: `drive.file` only. No Google Cloud console project, no test-user list.
 - **Numbering:** assigned by the database per user per calendar year (`fn_create_dispatch`).
