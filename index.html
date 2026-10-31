@@ -11,6 +11,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="compression.js"></script>
 
 
   <style>
@@ -985,10 +986,11 @@ function callApi(action, data) {
 ═══════════════════════════════════════════════════ */
 var MAX_FILE = 10 * 1024 * 1024;
 
-function _checkFile(f) {
+var MAX_BEFORE_COMPRESS = 30 * 1024 * 1024;   // big phone photos are allowed in; the 10 MB limit applies after compression
+function _checkFile(f, beforeCompress) {
   if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return 'Only PDF, JPG, JPEG and PNG files are allowed.';
   if (f.type && !/^(application\/pdf|image\/(jpeg|jpg|png))$/.test(f.type)) return 'File type not allowed.';
-  if (f.size > MAX_FILE) return 'File is larger than 10 MB.';
+  if (f.size > (beforeCompress ? MAX_BEFORE_COMPRESS : MAX_FILE)) return beforeCompress ? 'File is larger than 30 MB.' : 'File is larger than 10 MB, even after compression.';
   if (f.size === 0) return 'File is empty.';
   return '';
 }
@@ -1015,10 +1017,25 @@ function driveJson(action, body) {
   });
 }
 /* Upload one file with progress. meta: {kind, dispatch_id, inquiry_id?}. Resolves with the saved document or rejects with a clear message. */
-function driveUpload(file, meta, onProgress) {
-  var bad = _checkFile(file);
+/* Compress first (pictures are re-encoded smaller; PDFs get a light re-save) to keep Google Drive space use low.
+   Never returns something bigger than the original; falls back to the original if compression fails. */
+function compressForUpload(file, onStage) {
+  if (file._compressed || typeof DRCompress === 'undefined') return Promise.resolve({ file: file, saved: 0 });
+  return DRCompress.compressFile(file, function (pct, msg) { if (onStage) onStage(pct, msg); }).then(function (r) {
+    r.file._compressed = true;
+    return { file: r.file, saved: Math.max(0, r.report.savedBytes || 0), report: r.report };
+  }).catch(function () { return { file: file, saved: 0 }; });
+}
+function driveUpload(file, meta, onProgress, onStage) {
+  var bad = _checkFile(file, true);
   if (bad) return Promise.reject(new Error(bad));
-  return _driveHeaders().then(function (h) {
+  var saved = 0;
+  return compressForUpload(file, onStage).then(function (c) {
+    file = c.file; saved = c.saved;
+    var big = _checkFile(file, false);
+    if (big) throw new Error(big);
+    return _driveHeaders();
+  }).then(function (h) {
     return new Promise(function (resolve, reject) {
       var fd = new FormData();
       fd.append('file', file, file.name);
@@ -1029,7 +1046,7 @@ function driveUpload(file, meta, onProgress) {
       if (onProgress) x.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(Math.round(e.loaded * 100 / e.total)); };
       x.onload = function () {
         var j = {}; try { j = JSON.parse(x.responseText); } catch (e) {}
-        if (x.status >= 200 && x.status < 300 && j.success) resolve(j.document); else reject(_driveErr(x.status, j));
+        if (x.status >= 200 && x.status < 300 && j.success) { j.document.saved_bytes = saved; resolve(j.document); } else reject(_driveErr(x.status, j));
       };
       x.onerror = function () { reject(new Error('Network error while uploading.')); };
       x.send(fd);
@@ -1078,13 +1095,32 @@ function resendEmail(id) {
   sendDispatchEmail(id, false).then(function (m) { showToast(m); });
 }
 
+function DRCompressFmt(n) { return typeof DRCompress !== 'undefined' ? DRCompress.formatBytes(n) : Math.round(n / 1024) + ' KB'; }
 function pickAttachment() {
   _pickFiles(false, function (l) {
-    var bad = _checkFile(l[0]);
+    var bad = _checkFile(l[0], true);
     if (bad) { showToast(bad, true); return; }
-    _attached = l[0];
-    var el = document.getElementById('fileSelected');
-    el.textContent = '📎 ' + l[0].name + ' (will be saved in your Google Drive)'; el.style.display = 'block';
+    _attached = null; _compressing = true;
+    _cmpReset();
+    document.getElementById('cmpBox').style.display = 'block';
+    var el = document.getElementById('fileSelected'); el.style.display = 'none';
+    compressForUpload(l[0], function (pct, msg) {
+      document.getElementById('cmpBar').style.width = pct + '%'; document.getElementById('cmpPct').textContent = pct + '%';
+      document.getElementById('cmpStatusMsg').textContent = msg || '';
+    }).then(function (c) {
+      _compressing = false;
+      var big = _checkFile(c.file, false);
+      if (big) { _cmpReset(); showToast(big, true); return; }
+      _attached = c.file;
+      document.getElementById('cmpSpin').className = ''; document.getElementById('cmpLabel').textContent = 'Attachment ready';
+      if (c.report) {
+        document.getElementById('cmpStats').style.display = 'block';
+        document.getElementById('cmpOriginal').textContent = c.report.originalSizeH; document.getElementById('cmpFinal').textContent = c.report.finalSizeH;
+        document.getElementById('cmpSaved').textContent = c.report.savedBytesH + (c.report.percent ? ' (' + c.report.percent + '%)' : '');
+        document.getElementById('cmpFinalStatus').textContent = c.report.statusText;
+      }
+      el.textContent = '📎 ' + c.file.name + ' (will be saved in your Google Drive)'; el.style.display = 'block';
+    });
   });
 }
 function attachFile(id) {
@@ -1956,18 +1992,20 @@ function uploadCaseDocs(inquiryId) {
   _pickFiles(true, function (files) {
     var box = document.getElementById('uploadProgress');
     if (!box) { box = document.createElement('div'); box.id = 'uploadProgress'; box.style.cssText = 'font-size:.82rem;margin:8px 0;'; document.getElementById('caseBody').prepend(box); }
-    var done = 0, failed = [], i = 0;
+    var done = 0, failed = [], i = 0, savedTotal = 0;
     (function next() {
       if (i >= files.length) {
         box.remove();
-        showToast(done + ' document(s) uploaded' + (failed.length ? '; failed: ' + failed.join('; ') : '.'), failed.length > 0);
+        showToast(done + ' document(s) uploaded' + (savedTotal > 1024 ? ' (compression saved ' + DRCompressFmt(savedTotal) + ')' : '') + (failed.length ? '; failed: ' + failed.join('; ') : '.'), failed.length > 0);
         reloadCase(); return;
       }
       var f = files[i++], n = i;
       box.innerHTML = '<span class="spin-sm"></span> Uploading ' + n + ' of ' + files.length + ': ' + esc(f.name) + ' <span id="upPct">0%</span>';
       driveUpload(f, { kind: q ? 'inquiry' : 'supporting', dispatch_id: rec.rowNum, inquiry_id: q ? q.id : '' }, function (pct) {
         var el = document.getElementById('upPct'); if (el) el.textContent = pct + '%';
-      }).then(function () { done++; next(); }).catch(function (e) {
+      }, function (pct) {
+        var st = document.getElementById('upPct'); if (st) st.textContent = 'compressing ' + pct + '%';
+      }).then(function (doc) { done++; savedTotal += (doc && doc.saved_bytes) || 0; next(); }).catch(function (e) {
         failed.push(f.name + ' (' + e.message + ')');
         if (e.code === 'DRIVE_RECONNECT') { i = files.length; box.remove(); _driveFail(e); reloadCase(); return; }
         next();
