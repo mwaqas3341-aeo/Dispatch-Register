@@ -27,16 +27,16 @@ No Google Apps Script or Google Sheets is used any more. Supabase is the backend
 - **Drive layout** (created on demand): `Dispatch_Register/Reports/Report_<year>-<no>/Supporting_Documents`, `.../Inquiries/Inquiry_<n>/Action_Documents`, `.../Main_Document`.
 - **Reports**: folder button per row opens *Action Taken / Inquiries* (unlimited inquiries per report, each with its own documents) and *Supporting Documents* (PDF/JPG/JPEG/PNG, 10 MB each, batch upload with progress). Header cloud icon = Drive connection settings (connect, reconnect, disconnect).
 - Metadata only is stored in Supabase (`dispatch_documents`, `dispatch_inquiries`, `google_drive_connections`). The browser cannot insert or edit document rows; only the Edge Function can, after a real upload. A failed database write removes the Drive file again.
+- **Email**: when a dispatch is saved, the Edge Function emails each selected office (office + personal address) from the user's own Gmail (scope `gmail.send`), attaching the report's main file. Per-office status (`sent` / `failed` / `no_email`) is kept in `dispatch_recipients`; the envelope button in Reports retries only offices not yet emailed. Supporting and inquiry documents are not emailed.
 - Deleting a document moves the Drive file to the user's Drive Trash and marks the record deleted. Disconnecting keeps every record and file.
 
 ### One-time setup
-1. Google Cloud console: create a project, enable **Google Drive API**, configure the OAuth consent screen (External; scopes `openid`, `email`, `.../auth/drive.file`; these are non-sensitive, so **Publish app** to "In production" - in Testing mode Google expires refresh tokens after 7 days), create an **OAuth client ID (Web application)** with redirect URI `https://<project-ref>.supabase.co/functions/v1/drive`.
+1. Google Cloud console: create a project, enable **Google Drive API**, configure the OAuth consent screen (External; scopes `openid`, `email`, `.../auth/drive.file`, `.../auth/gmail.send`; `gmail.send` is a sensitive scope, so publishing to production needs Google's app verification; until then the app stays in Testing mode: max 100 listed test users, and Google expires their refresh tokens after 7 days), create an **OAuth client ID (Web application)** with redirect URI `https://<project-ref>.supabase.co/functions/v1/drive`.
 2. Supabase secrets (Edge Functions > Secrets): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TOKEN_ENC_KEY` (run `openssl rand -base64 32`; never change it after users connect), `APP_URL` (the GitHub Pages URL of the app, ending with `/`).
 3. Run the two SQL files in `supabase/migrations/` (already applied to the sandbox project).
 - Tests: `node tests/inquiries.js` (UI, jsdom), `deno test --allow-all tests/drive-fn.test.ts` (Edge Function with mocked Supabase and Google).
 
 ## Not included
-Emailing dispatches to offices. It would need a Gmail-sending permission for every user (an extra Google warning screen), so it is left out until requested.
 
 ## Sandbox status (branch `supabase-sandbox`)
 - Backend: separate Supabase project "Diary dispatch Module" (not connected to any other module).

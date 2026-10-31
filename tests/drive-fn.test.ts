@@ -11,15 +11,18 @@ const T: Record<string, any[]> = {
   user_profiles: [{ id: "u1", full_name: "User One", status: "active", gmail_address: "one@gmail.com", must_change_password: false },
                   { id: "u2", full_name: "User Two", status: "active", gmail_address: "two@gmail.com", must_change_password: false }],
   dispatch_register: [{ id: "d1", user_id: "u1", dispatch_no: 7, dispatch_year: 2026, status: "active" }],
+  recipients: [{ id: "r1", email_office: "deo@example.pk", email_personal: "deo.personal@example.pk" }, { id: "r2", email_office: null, email_personal: null }],
+  dispatch_recipients: [{ id: "dr1", dispatch_id: "d1", recipient_id: "r1", name_snapshot: "DEO", email_status: "pending" }, { id: "dr2", dispatch_id: "d1", recipient_id: "r2", name_snapshot: "No-mail office", email_status: "pending" }, { id: "dr3", dispatch_id: "d1", recipient_id: null, name_snapshot: "Other", email_status: "pending" }],
   dispatch_inquiries: [{ id: "q1", dispatch_id: "d1", user_id: "u1", inquiry_no: 2, record_status: "active" }],
   dispatch_documents: [], google_drive_connections: [], oauth_states: [],
 };
-const log: string[] = []; let failDocInsert = false; let googleRefreshError = false; let googleEmail = "one@gmail.com"; let scope = "openid email https://www.googleapis.com/auth/drive.file";
+const log: string[] = []; let failDocInsert = false; let googleRefreshError = false; let googleEmail = "one@gmail.com"; let scope = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send"; let gmailStatus = 200; const mails: string[] = [];
 let seq = 0; const folders: Record<string, string> = {};
 
 function match(row: any, q: URLSearchParams) {
   for (const [k, v] of q) {
     if (["select", "on_conflict", "limit", "order"].includes(k)) continue;
+    const mi = /^in\.\((.*)\)$/.exec(v); if (mi) { if (!mi[1].split(",").includes(String(row[k]))) return false; continue; }
     const m = /^(eq|lt)\.(.*)$/.exec(v); if (!m) continue;
     if (m[1] === "eq" && String(row[k]) !== m[2]) return false;
     if (m[1] === "lt" && !(String(row[k]) < m[2])) return false;
@@ -50,6 +53,7 @@ async function mockFetch(input: any, init: any = {}): Promise<Response> {
     if (b.get("grant_type") === "refresh_token") return googleRefreshError ? J({ error: "invalid_grant" }, 400) : J({ access_token: "at-" + b.get("refresh_token") });
     return J({ access_token: "at1", refresh_token: "RT-SECRET-1", scope });
   }
+  if (url.host === "gmail.googleapis.com") { if (gmailStatus !== 200) return J({ error: { message: "insufficientPermissions" } }, gmailStatus); mails.push(JSON.parse(init.body).raw); return J({ id: "m" + (++seq) }); }
   if (url.host === "oauth2.googleapis.com" && url.pathname === "/revoke") { log.push("revoke"); return J({}); }
   if (url.host === "openidconnect.googleapis.com") return J({ email: googleEmail });
   if (url.host === "www.googleapis.com" && url.pathname === "/drive/v3/files" && method === "GET") {
@@ -90,7 +94,7 @@ Deno.test("full flow", async () => {
   googleEmail = "one@gmail.com"; scope = "openid email";
   r = await call("start", "tok-u1"); const s2 = new URL((await r.json()).url).searchParams.get("state")!;
   r = await handler(new Request(`${SB}/functions/v1/drive?code=c&state=${s2}`)); ok(/drive=error/.test(r.headers.get("location")!), "callback rejects when Drive permission not granted");
-  scope = "openid email https://www.googleapis.com/auth/drive.file";
+  scope = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send";
   r = await call("start", "tok-u1"); const s3 = new URL((await r.json()).url).searchParams.get("state")!;
   r = await handler(new Request(`${SB}/functions/v1/drive?code=c&state=${s3}`)); ok(/drive=connected/.test(r.headers.get("location")!), "callback connects");
   const c = T.google_drive_connections[0];
@@ -122,15 +126,28 @@ Deno.test("full flow", async () => {
   r = await call("delete", "tok-u2", { id }); ok(r.status === 404, "other user cannot delete");
   r = await call("delete", "tok-u1", { id }); ok(r.status === 200 && T.dispatch_documents[0].status === "deleted" && log.some((x) => x.startsWith("trash:")), "owner delete trashes Drive file and marks record");
 
+  // email from the user's own Gmail
+  T.dispatch_documents.push({ id: "mainDoc", dispatch_id: "d1", user_id: "u1", doc_kind: "main", status: "active", drive_file_id: "fmain", file_name: "complaint.pdf", mime_type: "application/pdf", created_at: "2026-01-01T00:00:00Z" });
+  r = await call("send", "tok-u2", { dispatch_id: "d1" }); ok(r.status === 404, "another user cannot send mail for my report");
+  r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json();
+  ok(j.sent === 1 && j.no_email === 2 && mails.length === 1, "one email sent; offices without an address recorded as no_email");
+  const raw = new TextDecoder().decode(Uint8Array.from(atob(mails[0].replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
+  ok(/From: User One <one@gmail.com>/.test(raw) && /To: deo@example.pk, deo.personal@example.pk/.test(raw) && /filename="complaint.pdf"/.test(raw) && /Dispatch No\. 0007\/2026/.test(raw), "message is from the user's Gmail, to the office addresses, with the attachment");
+  ok(T.dispatch_recipients.find((x) => x.id === "dr1").email_status === "sent" && T.dispatch_recipients.find((x) => x.id === "dr2").email_status === "no_email", "per-recipient status saved");
+  r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json(); ok(mails.length === 1, "retry does not send duplicates to offices already emailed");
+  T.dispatch_recipients.find((x) => x.id === "dr1").email_status = "failed"; gmailStatus = 403;
+  r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json(); ok(r.status === 409 && j.code === "DRIVE_RECONNECT" && T.google_drive_connections[0].can_send === false, "missing send permission -> reconnect prompt");
+  gmailStatus = 200; T.google_drive_connections[0].can_send = true;
+
   // expired / revoked
   googleRefreshError = true;
   r = await call("upload", "tok-u1", form(pdf(), { kind: "supporting", dispatch_id: "d1" }), true); j = await r.json();
   ok(r.status === 409 && j.code === "DRIVE_RECONNECT" && T.google_drive_connections[0].connection_status === "needs_reconnect", "revoked access -> reconnect prompt, status updated");
-  ok(T.dispatch_documents.length === 2, "no record created for the failed upload");
+  ok(T.dispatch_documents.length === 3, "no record created for the failed upload");
   googleRefreshError = false;
 
   // disconnect keeps data
   T.google_drive_connections[0].connection_status = "connected";
-  r = await call("disconnect", "tok-u1", {}); ok(r.status === 200 && log.includes("revoke") && T.google_drive_connections[0].refresh_token_enc === "" && T.dispatch_documents.length === 2, "disconnect revokes token, keeps document records");
+  r = await call("disconnect", "tok-u1", {}); ok(r.status === 200 && log.includes("revoke") && T.google_drive_connections[0].refresh_token_enc === "" && T.dispatch_documents.length === 3, "disconnect revokes token, keeps document records");
   r = await call("file", "tok-u1", { id: T.dispatch_documents[1].id }); j = await r.json(); ok(r.status === 409, "after disconnect, access requires reconnect");
 });

@@ -408,6 +408,8 @@
         <span><strong>Upload, view and delete</strong> only the files this app creates.</span></div>
       <div class="perm-item"><span class="pi-icon"><i class="fas fa-folder-plus"></i></span>
         <span><strong>Create folders</strong> named "Dispatch_Register" (one per report inside it).</span></div>
+      <div class="perm-item"><span class="pi-icon"><i class="fas fa-paper-plane"></i></span>
+        <span><strong>Send email</strong> from your Gmail to the offices you select. The app cannot read your mail.</span></div>
       <div class="perm-item"><span class="pi-icon"><i class="fas fa-lock"></i></span>
         <span>The app can only see files it creates itself, never the rest of your Drive.</span></div>
       <div class="setup-msg" id="consentMsg"></div>
@@ -840,7 +842,14 @@ var API = {
   getNextDispatchNo: function (d) {
     return sb.rpc('fn_next_dispatch_no', { p_date: d.year + '-01-01' }).then(function (r) { return { value: _chk(r) }; });
   },
-  getEmailsForOffices: function () { return Promise.resolve({ emails: [] }); },
+  getEmailsForOffices: function (d) {
+    var out = [];
+    (d.offices || []).forEach(function (n) {
+      var c = _allContacts.find(function (x) { return x.officeName === n; });
+      var e = c && (c.emailOffice || c.emailPersonal); if (e) out.push(e);
+    });
+    return Promise.resolve({ emails: out });
+  },
   getDashboardStats: function () {
     var n = new Date(), ms = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-01';
     return Promise.all([
@@ -900,10 +909,15 @@ var API = {
     }).then(function (r) {
       if (r.error) return { success: false, error: r.error.message };
       var row = r.data, msg = 'Dispatch #' + fmtNo(row.dispatch_no) + ' saved';
-      if (!f.fileObj) return { success: true, message: msg + '.' };
-      return driveUpload(f.fileObj, { kind: 'main', dispatch_id: row.id })
-        .then(function () { return { success: true, message: msg + ' with attachment.' }; })
-        .catch(function (e) { return { success: true, message: msg + ', but the file was not uploaded (' + e.message + '). Use the paperclip in Reports to retry.' }; });
+      var up = !f.fileObj ? Promise.resolve('') : driveUpload(f.fileObj, { kind: 'main', dispatch_id: row.id })
+        .then(function () { return ' with attachment'; })
+        .catch(function (e) { return ', but the file was not uploaded (' + e.message + ')'; });
+      return up.then(function (note) {
+        var uploadFailed = note.indexOf('not uploaded') !== -1;
+        return sendDispatchEmail(row.id, uploadFailed).then(function (mailNote) {
+          return { success: true, message: msg + note + '. ' + mailNote };
+        });
+      });
     });
   },
   getFilteredReports: function (d) {
@@ -1041,6 +1055,25 @@ function _pickFiles(multiple, cb) {
   i.click();
 }
 
+/* Email the dispatch to the selected offices from the user's own Gmail (server-side). Never blocks saving. */
+function sendDispatchEmail(dispatchId, skipForFailedUpload) {
+  if (skipForFailedUpload) return Promise.resolve('Email not sent yet: retry the attachment, then use the envelope button in Reports.');
+  return driveJson('send', { dispatch_id: dispatchId }).then(function (r) {
+    var bits = [];
+    if (r.sent) bits.push('Email sent to ' + r.sent + ' office(s)');
+    if (r.no_email) bits.push(r.no_email + ' without an email address');
+    if (r.failed) bits.push(r.failed + ' failed (retry with the envelope button)');
+    return (bits.join('; ') || 'No email to send') + '.';
+  }).catch(function (e) {
+    return 'Saved, but email was not sent: ' + e.message + (e.code === 'DRIVE_RECONNECT' ? ' (cloud icon at the top)' : '');
+  });
+}
+function resendEmail(id) {
+  if (!confirm('Send the email now to the offices that have not received it yet?')) return;
+  showToast('Sending...');
+  sendDispatchEmail(id, false).then(function (m) { showToast(m); });
+}
+
 function pickAttachment() {
   _pickFiles(false, function (l) {
     var bad = _checkFile(l[0]);
@@ -1072,12 +1105,13 @@ function openDriveSettings() {
   sb.rpc('fn_my_drive_connection').then(function (r) {
     var c = (_chk(r) || [])[0];
     var st = c ? c.connection_status : 'none';
+    if (c && st === 'connected' && !c.can_send) st = 'needs_reconnect';
     var label = { connected: 'Connected', needs_reconnect: 'Needs reconnecting (expired or revoked)', disconnected: 'Disconnected', none: 'Not connected' }[st];
     var color = st === 'connected' ? 'var(--green)' : 'var(--red)';
     b.innerHTML = '<div class="detail-row"><span class="detail-label">Status</span><span class="detail-val" style="color:' + color + ';font-weight:800;">' + label + '</span></div>' +
       '<div class="detail-row"><span class="detail-label">Google account</span><span class="detail-val">' + esc(c ? c.google_email : (_profile && _profile.gmail_address) || '') + '</span></div>' +
       (c && c.connected_at ? '<div class="detail-row"><span class="detail-label">Connected on</span><span class="detail-val">' + new Date(c.connected_at).toLocaleDateString('en-GB') + '</span></div>' : '') +
-      '<p style="font-size:.8rem;color:var(--sub);margin:10px 0;">Files are kept in your own Google Drive under "Dispatch_Register". Disconnecting never deletes your reports, records or Drive files.</p>' +
+      '<p style="font-size:.8rem;color:var(--sub);margin:10px 0;">Files are kept in your own Google Drive under "Dispatch_Register", and dispatch emails are sent from this Gmail. Disconnecting never deletes your reports, records or Drive files.</p>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
       '<button class="btn btn-ok" onclick="startConnect2()"><i class="fas fa-link"></i> ' + (st === 'connected' ? 'Reconnect' : 'Connect') + ' Google Drive</button>' +
       (st === 'connected' ? '<button class="btn btn-out" onclick="disconnectDrive()"><i class="fas fa-unlink"></i> Disconnect</button>' : '') + '</div>' +
@@ -1558,7 +1592,6 @@ function officeSelectionChanged() {
 }
 
 function updateEmailNotices(selected) {
-  return; // email notifications are not part of this version
   var emailNotice   = document.getElementById('emailNotice');
   var noEmailNotice = document.getElementById('noEmailNotice');
   var targetEl      = document.getElementById('emailTarget');
@@ -1751,6 +1784,7 @@ function _renderReports(data) {
       '<button class="act-btn ab-view" onclick="viewDetail(\'' + r.rowNum + '\')" title="View"><i class="fas fa-eye"></i></button>' +
       (r.hasFile ? '<button class="act-btn ab-dl" onclick="dlFile(\'' + r.rowNum + '\')" title="Download"><i class="fas fa-download"></i></button>' : '<button class="act-btn ab-dl" onclick="attachFile(\'' + r.rowNum + '\')" title="Attach file"><i class="fas fa-paperclip"></i></button>') +
       '<button class="act-btn ab-view" style="background:var(--gold);color:#001433;" onclick="openCase(\'' + r.rowNum + '\')" title="Action Taken & Documents"><i class="fas fa-folder-open"></i></button>' +
+      '<button class="act-btn ab-dl" onclick="resendEmail(\'' + r.rowNum + '\')" title="Send email to offices"><i class="fas fa-envelope"></i></button>' +
       '<button class="act-btn ab-del" onclick="delReport(\'' + r.rowNum + '\')" title="Delete"><i class="fas fa-trash"></i></button>' +
       '</td></tr>';
   });

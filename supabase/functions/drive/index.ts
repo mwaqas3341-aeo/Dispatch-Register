@@ -5,12 +5,13 @@
 //   POST ?a=upload      -> multipart (file, kind, dispatch_id, inquiry_id?)  uploads to the user's Drive, then records metadata
 //   POST ?a=file        -> { id, download? } streams the file after an ownership check
 //   POST ?a=delete      -> { id } trashes the Drive file, then marks the record deleted
+//   POST ?a=send        -> { dispatch_id, resend? } emails the dispatch (with its main file) to the selected offices FROM THE USER'S OWN GMAIL
 //   POST ?a=disconnect  -> revokes the token and keeps all report/document metadata
 // Secrets: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TOKEN_ENC_KEY (base64, 32 bytes), APP_URL.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const MAX_BYTES = 10 * 1024 * 1024;
-const SCOPE = "openid email https://www.googleapis.com/auth/drive.file";
+const SCOPE = "openid email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.send";
 const ROOT_NAME = "Dispatch_Register";
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -143,7 +144,9 @@ async function handleCallback(url: URL, admin: ReturnType<typeof db>) {
     if (!me || me.status !== "active") return back(false, "Account not active.");
     const t = await googleToken({ grant_type: "authorization_code", code, redirect_uri: redirectUri() });
     if (!t.ok || !t.body.access_token) return back(false, "Google rejected the sign-in. Please try again.");
-    if (!String(t.body.scope || "").includes("auth/drive.file")) return back(false, "Drive permission was not granted. Please tick the permission box and try again.");
+    const granted = String(t.body.scope || "");
+    if (!granted.includes("auth/drive.file")) return back(false, "Drive permission was not granted. Please tick the permission box and try again.");
+    if (!granted.includes("auth/gmail.send")) return back(false, "Permission to send email was not granted. Please tick every permission box and try again.");
     if (!t.body.refresh_token) return back(false, "Google did not return offline access. Remove the app at myaccount.google.com/permissions and reconnect.");
     const ui = await (await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: gh(t.body.access_token) })).json();
     const email = String(ui.email || "").toLowerCase();
@@ -154,7 +157,7 @@ async function handleCallback(url: URL, admin: ReturnType<typeof db>) {
     const now = new Date().toISOString();
     const { error } = await admin.from("google_drive_connections").upsert({
       user_id: me.id, google_email: email, refresh_token_enc: await encrypt(t.body.refresh_token), root_folder_id: root,
-      connection_status: "connected", connected_at: now, updated_at: now });
+      connection_status: "connected", can_send: true, connected_at: now, updated_at: now });
     if (error) return back(false, "Could not save the connection.");
     await admin.from("user_profiles").update({ consent_given_at: now, drive_folder_id: root }).eq("id", me.id);
     return back(true);
@@ -211,6 +214,91 @@ async function handleUpload(req: Request, admin: ReturnType<typeof db>) {
     throw new HttpError(500, "The file could not be recorded, so the upload was cancelled.");
   }
   return json({ success: true, document: { ...row, uploader: me.full_name } });
+}
+
+
+// ---------- email (Gmail API, sent from the user's own account) ----------
+const b64Bytes = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+const wrap76 = (b: string) => b.replace(/(.{76})/g, "$1\r\n");
+const hdr = (s: string) => /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64Bytes(new TextEncoder().encode(s))}?=`;
+const clean1 = (s: string) => s.replace(/[\r\n]+/g, " ").trim();
+const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[^@\s,;<>"]+$/;
+const MAX_MAIL_ATTACH = 20 * 1024 * 1024;
+
+function buildMime(from: { name: string; email: string }, to: string[], subject: string, text: string, att: { name: string; mime: string; bytes: Uint8Array }[]) {
+  const b = "dr" + crypto.randomUUID().replace(/-/g, "");
+  const enc = new TextEncoder();
+  const lines = [
+    `From: ${hdr(clean1(from.name))} <${from.email}>`, `To: ${to.join(", ")}`, `Subject: ${hdr(clean1(subject))}`,
+    "MIME-Version: 1.0", `Content-Type: multipart/mixed; boundary="${b}"`, "",
+    `--${b}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", wrap76(b64Bytes(enc.encode(text))),
+  ];
+  for (const a of att) {
+    const fn = a.name.replace(/[^A-Za-z0-9._ -]/g, "_");
+    lines.push(`--${b}`, `Content-Type: ${a.mime}; name="${fn}"`, `Content-Disposition: attachment; filename="${fn}"`, "Content-Transfer-Encoding: base64", "", wrap76(b64Bytes(a.bytes)));
+  }
+  lines.push(`--${b}--`, "");
+  return b64Bytes(enc.encode(lines.join("\r\n"))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function handleSend(req: Request, admin: ReturnType<typeof db>) {
+  const me = await authUser(req, admin);
+  const { dispatch_id, resend } = await req.json();
+  const { data: d } = await admin.from("dispatch_register")
+    .select("id, dispatch_no, dispatch_year, dispatch_date, category, subject, remarks, school_name, emis_code, concerned_person, status")
+    .eq("id", String(dispatch_id)).eq("user_id", me.id).maybeSingle();
+  if (!d || d.status !== "active") throw new HttpError(404, "Report not found.");
+  const { data: recs } = await admin.from("dispatch_recipients").select("id, recipient_id, name_snapshot, email_status").eq("dispatch_id", d.id);
+  const todo = (recs || []).filter((r: any) => resend || r.email_status !== "sent");
+  if (!todo.length) return json({ success: true, sent: 0, failed: 0, no_email: 0, message: "Nothing to send." });
+
+  const { token, conn } = await accessToken(admin, me.id);
+  if (!conn.can_send) throw new HttpError(409, "Please reconnect Google Drive and allow sending email.", "DRIVE_RECONNECT");
+
+  const ids = todo.map((r: any) => r.recipient_id).filter(Boolean);
+  const emails: Record<string, string[]> = {};
+  if (ids.length) {
+    const { data: cs } = await admin.from("recipients").select("id, email_office, email_personal").in("id", ids);
+    for (const c of cs || []) emails[c.id] = [c.email_office, c.email_personal].map((e: string | null) => String(e || "").trim()).filter((e: string) => EMAIL_RE.test(e));
+  }
+  // attach the report's main file, if any
+  const att: { name: string; mime: string; bytes: Uint8Array }[] = [];
+  const { data: docs } = await admin.from("dispatch_documents").select("id, drive_file_id, file_name, mime_type")
+    .eq("dispatch_id", d.id).eq("doc_kind", "main").eq("status", "active").order("created_at", { ascending: false }).limit(1);
+  const main = docs?.[0];
+  if (main?.drive_file_id) {
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${main.drive_file_id}?alt=media`, { headers: gh(token) });
+    if (r.status === 401) throw RECONNECT();
+    if (r.ok) {
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      if (bytes.length > MAX_MAIL_ATTACH) throw new HttpError(413, "The attachment is too large to email (limit about 20 MB).");
+      att.push({ name: main.file_name, mime: main.mime_type, bytes });
+    }
+  }
+  const no = `${String(d.dispatch_no).padStart(4, "0")}/${d.dispatch_year}`;
+  const body = [`Dispatch No: ${no}`, `Date: ${d.dispatch_date}`, d.category ? `Category: ${d.category}` : "", d.school_name ? `School: ${d.school_name}${d.emis_code ? " (EMIS " + d.emis_code + ")" : ""}` : "",
+    d.concerned_person ? `Concerned person: ${d.concerned_person}` : "", "", String(d.subject || ""), d.remarks ? `\nRemarks: ${d.remarks}` : "",
+    att.length ? "\nThe attachment is enclosed." : "", `\nSent by ${me.full_name} (${conn.google_email}) through the Dispatch Register.`].filter((x) => x !== "").join("\n");
+  const subject = `Dispatch No. ${no}${d.category ? " - " + d.category : ""}`;
+
+  let sent = 0, failed = 0, noEmail = 0;
+  for (const r of todo as any[]) {
+    const to = r.recipient_id ? emails[r.recipient_id] || [] : [];
+    if (!to.length) { noEmail++; await admin.from("dispatch_recipients").update({ email_status: "no_email", email_error: null }).eq("id", r.id); continue; }
+    const g = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST", headers: { ...gh(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ raw: buildMime({ name: me.full_name, email: conn.google_email }, to, subject, body, att) }) });
+    if (g.status === 401 || g.status === 403) {
+      const t = await g.text();
+      if (g.status === 401 || /insufficient|scope|PERMISSION/i.test(t)) {
+        await admin.from("google_drive_connections").update({ can_send: false }).eq("user_id", me.id);
+        throw new HttpError(409, "Please reconnect Google Drive and allow sending email.", "DRIVE_RECONNECT");
+      }
+    }
+    if (g.ok) { sent++; await admin.from("dispatch_recipients").update({ email_status: "sent", sent_at: new Date().toISOString(), email_error: null }).eq("id", r.id); }
+    else { failed++; await admin.from("dispatch_recipients").update({ email_status: "failed", email_error: `Gmail ${g.status}` }).eq("id", r.id); }
+  }
+  return json({ success: true, sent, failed, no_email: noEmail, attached: att.length });
 }
 
 async function ownedDoc(admin: ReturnType<typeof db>, userId: string, id: string) {
@@ -276,6 +364,7 @@ Deno.serve(async (req) => {
       case "upload": return await handleUpload(req, admin);
       case "file": return await handleFile(req, admin);
       case "delete": return await handleDelete(req, admin);
+      case "send": return await handleSend(req, admin);
       case "disconnect": return await handleDisconnect(req, admin);
       default: throw new HttpError(404, "Unknown action");
     }
