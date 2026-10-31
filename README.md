@@ -21,12 +21,19 @@ Frontend (this repo, GitHub Pages) + Supabase backend. Supabase stores users, th
 - `supabase/functions/` - Edge Functions `admin-users`, `change-password`
 - `supabase/schema.sql` - reference copy of the database schema
 
-## Action Taken and Supporting Documents (Reports)
-- In Reports, the folder button on each row opens two tabs: **Action Taken / Inquiries** (unlimited inquiries per report: authority, details, date, status, remarks, own documents) and **Supporting Documents** (many PDF/JPG/JPEG/PNG files, up to 10 MB each, several at a time).
-- Files go to the user's own Drive, in `Dispatch Register Files/Reports/Report_<year>-<no>/Supporting_Documents` and `.../Inquiries/Inquiry_<n>/action_documents`. Supabase keeps only metadata and links (name, type, size, folder path, uploader, report and inquiry IDs). The Apps Script re-checks the real file type (PDF/JPEG/PNG signature) and size and writes its own safe file names.
-- Deleting an inquiry or document is a soft delete (same policy as dispatch records); nothing is orphaned and Drive files are never removed.
-- Setup: run `supabase/migrations/20261030_action_taken_and_documents.sql` in the Supabase SQL editor, then **redeploy the Apps Script** (new `uploadDoc`, new `docs` mode; Deploy -> Manage deployments -> edit -> New version).
-- Tests: `node tests/inquiries.js` (jsdom + in-memory backend).
+## Google Drive storage and Action Taken (Reports)
+No Google Apps Script or Google Sheets is used any more. Supabase is the backend; every user's documents live in their own Google Drive.
+- **Edge Function `drive`** (`supabase/functions/drive`, deployed with verify_jwt off because it authenticates itself): Google OAuth (scope `drive.file`), encrypted refresh tokens (AES-256-GCM), upload / view / download / delete, disconnect. The browser never sees a Google token, and documents are streamed through the function after an ownership check (no public Drive links).
+- **Drive layout** (created on demand): `Dispatch_Register/Reports/Report_<year>-<no>/Supporting_Documents`, `.../Inquiries/Inquiry_<n>/Action_Documents`, `.../Main_Document`.
+- **Reports**: folder button per row opens *Action Taken / Inquiries* (unlimited inquiries per report, each with its own documents) and *Supporting Documents* (PDF/JPG/JPEG/PNG, 10 MB each, batch upload with progress). Header cloud icon = Drive connection settings (connect, reconnect, disconnect).
+- Metadata only is stored in Supabase (`dispatch_documents`, `dispatch_inquiries`, `google_drive_connections`). The browser cannot insert or edit document rows; only the Edge Function can, after a real upload. A failed database write removes the Drive file again.
+- Deleting a document moves the Drive file to the user's Drive Trash and marks the record deleted. Disconnecting keeps every record and file.
+
+### One-time setup
+1. Google Cloud console: create a project, enable **Google Drive API**, configure the OAuth consent screen (External; scopes `openid`, `email`, `.../auth/drive.file`; these are non-sensitive, so **Publish app** to "In production" - in Testing mode Google expires refresh tokens after 7 days), create an **OAuth client ID (Web application)** with redirect URI `https://<project-ref>.supabase.co/functions/v1/drive`.
+2. Supabase secrets (Edge Functions > Secrets): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TOKEN_ENC_KEY` (run `openssl rand -base64 32`; never change it after users connect), `APP_URL` (the GitHub Pages URL of the app, ending with `/`).
+3. Run the two SQL files in `supabase/migrations/` (already applied to the sandbox project).
+- Tests: `node tests/inquiries.js` (UI, jsdom), `deno test --allow-all tests/drive-fn.test.ts` (Edge Function with mocked Supabase and Google).
 
 ## Not included
 Emailing dispatches to offices. It would need a Gmail-sending permission for every user (an extra Google warning screen), so it is left out until requested.

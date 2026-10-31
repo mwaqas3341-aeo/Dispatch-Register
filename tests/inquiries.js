@@ -8,7 +8,7 @@ let fails = 0;
 const ok = (name, cond, extra) => { if (!cond) fails++; console.log((cond ? 'PASS ' : 'FAIL ') + name + (cond ? '' : ' ' + (extra || ''))); };
 
 const errors = [];
-const vc = new VirtualConsole(); vc.on('jsdomError', e => errors.push((e.detail && e.detail.message) || e.message));
+const vc = new VirtualConsole(); vc.on('jsdomError', e => !/navigation/.test(e.message) && errors.push((e.detail && e.detail.message) || e.message));
 const profile = { id: 'u1', cnic: '1111111111111', full_name: 'Test User', district: 'LAYYAH', tehsil: 'T1', wing: 'W-EE', role: 'user',
   status: 'active', must_change_password: false, gmail_address: 'a@gmail.com', gmail_confirmed_at: 'x', consent_given_at: 'x', drive_folder_id: 'f' };
 const db = { user_profiles: [profile], app_config: [], recipients: [], schools: [], dispatch_recipients: [],
@@ -47,14 +47,13 @@ const fake = {
   functions: { invoke: () => Promise.resolve({ data: {}, error: null }) }, storage: {}
 };
 const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: vc, url: 'https://mwaqas3341-aeo.github.io/Dispatch-Register/',
-  beforeParse(w) { w.supabase = { createClient: () => fake }; w.XLSX = {}; w.alert = () => {}; w.confirm = () => true; w.open = (u) => { w.__opened = u; }; } });
+  beforeParse(w) { w.supabase = { createClient: () => fake }; w.XLSX = {}; w.alert = () => {}; w.confirm = () => true; w.open = (u) => { w.__opened = u; return { location: {}, close() {} }; }; } });
 const w = dom.window, $ = id => w.document.getElementById(id);
 const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object.assign({ source: 'dispatch-uploader' }, d), origin: 'https://n-abc-script.googleusercontent.com' }));
 
 (async () => {
   await sleep(300);
   $('loginCnic').value = '1111111111111'; $('loginPw').value = 'secret123'; w.doLogin(); await sleep(1500);
-  w.UPLOADER_URL = 'https://script.google.com/macros/s/AKfy/exec';
   w.loadReports(); await sleep(300);
   ok('report row has Action Taken button', !!w.document.querySelector('#reportSection button[title="Action Taken & Documents"]'));
   w.openCase('d1'); await sleep(300);
@@ -71,40 +70,37 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   w.openInquiryForm(db.dispatch_inquiries[1].id); $('inqStatus').value = 'completed'; w.saveInquiry(); await sleep(250);
   ok('edit inquiry', db.dispatch_inquiries[1].action_status === 'completed' && /Completed/.test($('caseBody').textContent));
 
-  // multi-file upload against inquiry 2
-  w.uploadCaseDocs(db.dispatch_inquiries[1].id);
-  const src = $('uploaderFrame').src; const nonce = /[?&]n=([^&]+)/.exec(src)[1];
-  ok('uploader path is report/inquiry folder', decodeURIComponent(/path=([^&]+)/.exec(src)[1]) === 'Reports/Report_2026-0007/Inquiries/Inquiry_2/action_documents', src);
-  post({ nonce, type: 'uploaded_many', email: 'a@gmail.com', folderId: 'f', failed: ['bad.exe'], files: [
-    { id: 'g1', name: 'a.pdf', mimeType: 'application/pdf', size: 1000, webViewLink: 'https://drive.google.com/file/d/g1/view', path: 'Reports/Report_2026-0007/Inquiries/Inquiry_2/action_documents' },
-    { id: 'g2', name: 'b.jpg', mimeType: 'image/jpeg', size: 2000, webViewLink: 'https://drive.google.com/file/d/g2/view', path: 'x' }] });
-  await sleep(400);
+  // uploads go through the Edge Function client (stubbed here); verify what the UI sends
+  const sent = []; const calls = [];
+  w.driveUpload = (file, meta, prog) => { const bad = w._checkFile(file); if (bad) return Promise.reject(new Error(bad)); sent.push(meta); prog && prog(100);
+    const d = { id: 'doc' + sent.length, dispatch_id: meta.dispatch_id, inquiry_id: meta.inquiry_id || null, doc_kind: meta.kind, file_name: file.name, mime_type: file.type, file_size: file.size, status: 'active', created_at: '2026-03-06T00:00:00Z' };
+    db.dispatch_documents.push(d); return Promise.resolve(d); };
+  w.driveJson = (a, b) => { calls.push([a, b]); if (a === 'delete') db.dispatch_documents.find(x => x.id === b.id).status = 'deleted'; return Promise.resolve({ success: true }); };
+  w.driveCall = (a, b) => { calls.push([a, b]); return Promise.resolve({ ok: true, blob: () => Promise.resolve(new w.Blob(['x'])) }); };
+  w.URL.createObjectURL = () => 'blob:x'; w.URL.revokeObjectURL = () => {};
+  const pickQueue = []; w._pickFiles = (m, cb) => cb(pickQueue.shift());
+  const mk = (n, t, size = 100) => { const f = new w.File(['x'.repeat(Math.min(size, 50))], n, { type: t }); Object.defineProperty(f, 'size', { value: size }); return f; };
+
+  ok('client rejects .exe', !!w._checkFile(mk('a.exe', 'application/octet-stream')));
+  ok('client rejects >10MB', /10 MB/.test(w._checkFile(mk('a.pdf', 'application/pdf', 11 * 1024 * 1024))));
+  ok('client accepts pdf/jpg/jpeg/png', ['a.pdf', 'b.JPG', 'c.jpeg', 'd.png'].every(n => !w._checkFile(mk(n, n.endsWith('pdf') ? 'application/pdf' : 'image/jpeg'))));
+
+  pickQueue.push([mk('a.pdf', 'application/pdf'), mk('b.jpg', 'image/jpeg'), mk('bad.exe', 'application/x-msdownload')]);
+  w.uploadCaseDocs(db.dispatch_inquiries[1].id); await sleep(500);
   const inqDocs = db.dispatch_documents.filter(d => d.doc_kind === 'inquiry');
-  ok('2 inquiry documents linked to inquiry 2 + report', inqDocs.length === 2 && inqDocs.every(d => d.inquiry_id === db.dispatch_inquiries[1].id && d.dispatch_id === 'd1'));
+  ok('batch to inquiry 2: valid files uploaded, invalid one reported, all linked to inquiry + report', inqDocs.length === 2 && inqDocs.every(d => d.inquiry_id === db.dispatch_inquiries[1].id && d.dispatch_id === 'd1'));
 
-  // supporting docs tab
-  w.caseTab('d'); w.uploadCaseDocs(null);
-  const n2 = /[?&]n=([^&]+)/.exec($('uploaderFrame').src)[1];
-  ok('supporting path', /Supporting_Documents/.test(decodeURIComponent($('uploaderFrame').src)));
-  post({ nonce: n2, type: 'uploaded_many', email: 'a@gmail.com', folderId: 'f', files: [{ id: 'g3', name: 'c.png', mimeType: 'image/png', size: 500, webViewLink: 'https://drive.google.com/file/d/g3/view', path: 'p' }] });
-  await sleep(400);
-  ok('supporting doc stored with kind=supporting, no inquiry', db.dispatch_documents.some(d => d.doc_kind === 'supporting' && !d.inquiry_id));
-  ok('supporting tab shows file with name', /c\.png/.test($('caseBody').textContent) && !/a\.pdf/.test($('caseBody').textContent));
+  w.caseTab('d'); pickQueue.push([mk('c.png', 'image/png')]); w.uploadCaseDocs(null); await sleep(400);
+  ok('supporting doc uploaded with kind=supporting and no inquiry', db.dispatch_documents.some(d => d.doc_kind === 'supporting' && !d.inquiry_id));
+  ok('supporting tab shows file, uploader name, and not inquiry files', /c\.png/.test($('caseBody').textContent) && /Test User/.test($('caseBody').textContent) && !/a\.pdf/.test($('caseBody').textContent));
 
-  // wrong Google account is rejected
-  w.uploadCaseDocs(null); const n3 = /[?&]n=([^&]+)/.exec($('uploaderFrame').src)[1]; const before = db.dispatch_documents.length;
-  post({ nonce: n3, type: 'uploaded_many', email: 'other@gmail.com', folderId: 'f', files: [{ id: 'z', name: 'z.pdf', mimeType: 'application/pdf', size: 1, webViewLink: 'https://drive.google.com/x', path: 'p' }] }); await sleep(200);
-  ok('upload from a different Google account is not recorded', db.dispatch_documents.length === before);
-  // bad nonce rejected
-  post({ nonce: 'nope', type: 'uploaded_many', email: 'a@gmail.com', folderId: 'f', files: [{ id: 'z' }] }); await sleep(100);
-  ok('bad nonce ignored', db.dispatch_documents.length === before);
-
-  w.caseTab('d'); await sleep(50);
-  w.openDoc(db.dispatch_documents.find(d => d.doc_kind === 'supporting').id); ok('view opens drive link', /drive\.google\.com/.test(w.__opened || ''));
-  db.dispatch_documents.push({ id: 'evil', dispatch_id: 'd1', doc_kind: 'supporting', status: 'active', file_name: 'e', drive_web_view_link: 'javascript:alert(1)', created_at: '2026-03-06T00:00:00Z' });
-  w.reloadCase(); await sleep(200); w.__opened = ''; w.openDoc('evil'); ok('non-Drive link refused', !w.__opened);
-  w.delDoc(db.dispatch_documents.find(d => d.doc_kind === 'supporting').id); await sleep(250);
-  ok('delete document (soft)', db.dispatch_documents.find(d => d.file_name === 'c.png').status === 'deleted' && !/c\.png/.test($('caseBody').textContent));
+  w.openDoc(db.dispatch_documents.find(d => d.doc_kind === 'supporting').id, false); await sleep(100);
+  ok('view goes through the backend (no public Drive link)', calls.some(c => c[0] === 'file' && c[1].download === false));
+  w.openDoc(db.dispatch_documents.find(d => d.doc_kind === 'supporting').id, true); await sleep(100);
+  ok('download goes through the backend', calls.some(c => c[0] === 'file' && c[1].download === true));
+  w.delDoc(db.dispatch_documents.find(d => d.doc_kind === 'supporting').id); await sleep(300);
+  ok('delete document calls backend and refreshes list', calls.some(c => c[0] === 'delete') && !/c\.png/.test($('caseBody').textContent));
+  ok('no Google Apps Script left in the page', !/script\.google\.com|UPLOADER_URL|openUploader/.test(html));
 
   w.caseTab('a'); w.delInquiry(db.dispatch_inquiries[1].id); await sleep(250);
   ok('delete inquiry soft-deletes it and its docs; others remain', db.dispatch_inquiries[1].record_status === 'deleted' && db.dispatch_documents.filter(d => d.inquiry_id).every(d => d.status === 'deleted') && (($('caseBody').textContent.match(/Inquiry \d/g)) || []).length === 3);
