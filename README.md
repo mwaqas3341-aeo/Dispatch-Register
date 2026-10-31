@@ -21,6 +21,13 @@ Frontend (this repo, GitHub Pages) + Supabase backend. Supabase stores users, th
 - `supabase/functions/` - Edge Functions `admin-users`, `change-password`
 - `supabase/schema.sql` - reference copy of the database schema
 
+## Action Taken and Supporting Documents (Reports)
+- In Reports, the folder button on each row opens two tabs: **Action Taken / Inquiries** (unlimited inquiries per report: authority, details, date, status, remarks, own documents) and **Supporting Documents** (many PDF/JPG/JPEG/PNG files, up to 10 MB each, several at a time).
+- Files go to the user's own Drive, in `Dispatch Register Files/Reports/Report_<year>-<no>/Supporting_Documents` and `.../Inquiries/Inquiry_<n>/action_documents`. Supabase keeps only metadata and links (name, type, size, folder path, uploader, report and inquiry IDs). The Apps Script re-checks the real file type (PDF/JPEG/PNG signature) and size and writes its own safe file names.
+- Deleting an inquiry or document is a soft delete (same policy as dispatch records); nothing is orphaned and Drive files are never removed.
+- Setup: run `supabase/migrations/20261030_action_taken_and_documents.sql` in the Supabase SQL editor, then **redeploy the Apps Script** (new `uploadDoc`, new `docs` mode; Deploy -> Manage deployments -> edit -> New version).
+- Tests: `node tests/inquiries.js` (jsdom + in-memory backend).
+
 ## Not included
 Emailing dispatches to offices. It would need a Gmail-sending permission for every user (an extra Google warning screen), so it is left out until requested.
 

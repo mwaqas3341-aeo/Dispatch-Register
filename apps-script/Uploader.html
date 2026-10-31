@@ -19,6 +19,7 @@
   <p id="sub"></p>
   <div id="uploadUi" style="display:none;">
     <input type="file" id="f" accept="image/*,.pdf,.doc,.docx,.xlsx,.xls">
+    <div id="docsHint" style="display:none;font-size:.8rem;color:#4a5568;margin-top:6px;">PDF, JPG, JPEG or PNG. Up to 10 MB each. You can choose several files.</div>
     <button id="go">Upload to my Google Drive</button>
   </div>
   <div id="msg"></div>
@@ -36,6 +37,11 @@
       .withSuccessHandler(function (r) { say('Connected as ' + r.email, 'ok'); post({ type: 'connected', email: r.email, folderId: r.folderId }); })
       .withFailureHandler(function (e) { say(String(e && e.message || e), 'err'); post({ type: 'error', message: String(e && e.message || e) }); })
       .connect();
+  } else if (P.mode === 'docs') {
+    $('title').textContent = 'Upload documents' + (P.label ? ' - ' + P.label : '');
+    $('sub').textContent = 'Saved in your own Google Drive: ' + P.path.join(' / ');
+    $('uploadUi').style.display = 'block'; $('docsHint').style.display = 'block';
+    $('f').multiple = true; $('f').accept = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
   } else {
     $('title').textContent = 'Attach a file' + (P.label ? ' - ' + P.label : '');
     $('sub').textContent = 'The file is saved in your own Google Drive, in the folder "Dispatch Register Files".';
@@ -60,7 +66,42 @@
     });
   }
 
+  function readB64(f) {
+    return new Promise(function (res, rej) {
+      var rd = new FileReader(); rd.onload = function () { res(String(rd.result).split(',')[1]); };
+      rd.onerror = function () { rej(new Error('Could not read the file.')); }; rd.readAsDataURL(f);
+    });
+  }
+  function uploadMany(files) {
+    var done = [], failed = [], i = 0;
+    $('go').disabled = true;
+    (function next() {
+      if (i >= files.length) {
+        say(done.length + ' uploaded' + (failed.length ? ', ' + failed.length + ' failed: ' + failed.join('; ') : '.'), failed.length ? 'err' : 'ok');
+        if (done.length) post({ type: 'uploaded_many', email: done[0].email, folderId: done[0].folderId, failed: failed,
+          files: done.map(function (r) { return { id: r.id, name: r.name, mimeType: r.mimeType, size: r.size, webViewLink: r.webViewLink, path: r.path }; }) });
+        else $('go').disabled = false;
+        return;
+      }
+      var f = files[i++]; say('Uploading ' + i + ' of ' + files.length + ': ' + f.name);
+      if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { failed.push(f.name + ' (type not allowed)'); return next(); }
+      prep(f).then(function (g) {
+        if (g.size > 10 * 1024 * 1024) { failed.push(f.name + ' (over 10 MB)'); return next(); }
+        return readB64(g).then(function (b64) {
+          google.script.run.withSuccessHandler(function (r) { r.name = f.name; done.push(r); next(); })
+            .withFailureHandler(function (e) { failed.push(f.name + ' (' + String(e && e.message || e) + ')'); next(); })
+            .uploadDoc(b64, g.name, P.path);
+        });
+      }).catch(function (e) { failed.push(f.name + ' (' + e.message + ')'); next(); });
+    })();
+  }
+
   $('go').onclick = function () {
+    if (P.mode === 'docs') {
+      var fl = Array.prototype.slice.call($('f').files);
+      if (!fl.length) { say('Please choose at least one file.', 'err'); return; }
+      return uploadMany(fl);
+    }
     var file = $('f').files[0];
     if (!file) { say('Please choose a file first.', 'err'); return; }
     $('go').disabled = true; say('Preparing...');

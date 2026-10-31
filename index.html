@@ -713,6 +713,39 @@
   </div>
 </div>
 
+<!-- Action Taken / Documents modal -->
+<div class="modal-overlay" id="caseModal">
+  <div class="modal-box" style="max-width:760px;max-height:92vh;display:flex;flex-direction:column;">
+    <div class="modal-head"><h4 id="caseTitle">Action Taken</h4><button class="modal-close" onclick="closeModal('caseModal')"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body" style="overflow-y:auto;">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn btn-pr" id="caseTabA" onclick="caseTab('a')"><i class="fas fa-gavel"></i> Action Taken / Inquiries</button>
+        <button class="btn btn-out" id="caseTabD" onclick="caseTab('d')"><i class="fas fa-paperclip"></i> Supporting Documents</button>
+      </div>
+      <div id="caseBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Inquiry form modal -->
+<div class="modal-overlay" id="inquiryModal">
+  <div class="modal-box">
+    <div class="modal-head"><h4 id="inqTitle">Add Inquiry / Action</h4><button class="modal-close" onclick="closeModal('inquiryModal')"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body">
+      <label class="lbl">Authority / Department *</label><input class="inp" id="inqAuth" maxlength="200" placeholder="e.g. DEO (M-EE), Director Inquiries" style="margin-bottom:10px;">
+      <label class="lbl">Action Taken / Proceedings *</label><textarea class="inp" id="inqDetails" maxlength="4000" placeholder="Describe the action, response or proceedings..." style="margin-bottom:10px;"></textarea>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="flex:1;min-width:150px;"><label class="lbl">Date of Action *</label><input type="date" class="inp" id="inqDate"></div>
+        <div style="flex:1;min-width:150px;"><label class="lbl">Status</label>
+          <select class="inp" id="inqStatus"><option value="pending">Pending</option><option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="closed">Closed</option><option value="not_applicable">Not applicable</option></select></div>
+      </div>
+      <label class="lbl">Remarks</label><textarea class="inp" id="inqRemarks" maxlength="2000" style="min-height:60px;"></textarea>
+      <div id="inqMsg" style="color:var(--red);font-size:.82rem;margin-top:8px;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-out" onclick="closeModal('inquiryModal')">Cancel</button><button class="btn btn-ok" id="inqSave" onclick="saveInquiry()"><i class="fas fa-save"></i> Save</button></div>
+  </div>
+</div>
+
 <!-- Drive uploader modal -->
 <div class="modal-overlay" id="uploaderModal">
   <div class="modal-box">
@@ -785,7 +818,7 @@ function _mapContact(c) {
 function _mapRecord(x, i) {
   var offices = (x.dispatch_recipients || []).map(function (n) { return n.name_snapshot; });
   if (!offices.length && x.other_office_name) offices.push(x.other_office_name);
-  var doc = (x.dispatch_documents || []).filter(function (d) { return d.status === 'active'; })[0];
+  var doc = (x.dispatch_documents || []).filter(function (d) { return d.status === 'active' && (d.doc_kind || 'main') === 'main'; })[0];
   return { rowNum: x.id, srNo: i + 1, isoDate: x.dispatch_date, reportDate: fmtDMY(x.dispatch_date),
            dispatchNo: fmtNo(x.dispatch_no), selectOffice: offices.join(', '), category: x.category || '',
            description: x.subject || '', remarks: x.remarks || '', emisCode: x.emis_code || '',
@@ -795,7 +828,7 @@ function _mapRecord(x, i) {
 }
 var REC_SELECT = 'id,dispatch_date,dispatch_no,category,subject,remarks,school_type,emis_code,school_name,' +
   'concerned_person,other_office_name,deleted_at,dispatch_recipients(name_snapshot),' +
-  'dispatch_documents(id,drive_web_view_link,legacy_url,status)';
+  'dispatch_documents(id,drive_web_view_link,legacy_url,status,doc_kind)';
 
 var API = {
   getAdminConfig: function () {
@@ -899,6 +932,22 @@ var API = {
   restoreDispatchRecord: function (d) {
     return sb.rpc('fn_restore_dispatch', { p_id: d.rowNum }).then(function (r) { _chk(r); return { message: 'Record restored.' }; });
   },
+  getCaseData: function (d) {
+    return Promise.all([
+      sb.from('dispatch_inquiries').select('*').eq('dispatch_id', d.dispatchId).eq('record_status', 'active')
+        .order('action_date', { ascending: true }).order('inquiry_no', { ascending: true }),
+      sb.from('dispatch_documents').select('id,inquiry_id,doc_kind,file_name,mime_type,file_size,drive_web_view_link,created_at')
+        .eq('dispatch_id', d.dispatchId).eq('status', 'active').in('doc_kind', ['supporting', 'inquiry'])
+        .order('created_at', { ascending: true })
+    ]).then(function (r) { return { inquiries: _chk(r[0]), documents: _chk(r[1]) }; });
+  },
+  saveInquiry: function (d) {
+    var a = { p_authority: d.authority, p_details: d.details, p_date: d.date, p_status: d.status, p_remarks: d.remarks };
+    return d.id ? sb.rpc('fn_update_inquiry', Object.assign({ p_id: d.id }, a)).then(_chk)
+                : sb.rpc('fn_add_inquiry', Object.assign({ p_dispatch_id: d.dispatchId }, a)).then(_chk);
+  },
+  deleteInquiry: function (d) { return sb.rpc('fn_delete_inquiry', { p_id: d.id }).then(_chk); },
+  deleteDocument: function (d) { return sb.rpc('fn_delete_document', { p_id: d.id }).then(_chk); },
   getSchoolNameByEMIS: function (d) {
     return sb.from('schools').select('name').eq('emis_code', d.emisCode).maybeSingle().then(function (r) {
       return { name: r.data ? r.data.name : null };
@@ -919,14 +968,15 @@ function callApi(action, data) {
 var _nonce = '', _uploaderCb = null;
 
 function _uploaderReady() { return /^https:\/\/script\.google\.com\//.test(UPLOADER_URL); }
-function _frameUrl(mode, label) {
+function _frameUrl(mode, label, path) {
   _nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  return UPLOADER_URL + (UPLOADER_URL.indexOf('?') < 0 ? '?' : '&') + 'mode=' + mode + '&n=' + _nonce + '&label=' + encodeURIComponent(label || '');
+  return UPLOADER_URL + (UPLOADER_URL.indexOf('?') < 0 ? '?' : '&') + 'mode=' + mode + '&n=' + _nonce + '&label=' + encodeURIComponent(label || '') +
+         (path ? '&path=' + encodeURIComponent(path) : '');
 }
-function openUploader(mode, cb, label) {
+function openUploader(mode, cb, label, path) {
   if (!_uploaderReady()) { showToast('Google Drive is not set up yet. Please contact the administrator.', true); return; }
   _uploaderCb = cb;
-  document.getElementById('uploaderFrame').src = _frameUrl(mode, label);
+  document.getElementById('uploaderFrame').src = _frameUrl(mode, label, path);
   openModal('uploaderModal');
 }
 function closeUploader() {
@@ -952,6 +1002,7 @@ window.addEventListener('message', function (ev) {
   ready.then(function () {
     if (d.type === 'connected') { routeAfterLogin(); return; }
     if (d.type === 'uploaded') { var cb = _uploaderCb; closeUploader(); if (cb) cb(d.file); }
+    if (d.type === 'uploaded_many') { var cb2 = _uploaderCb; closeUploader(); if (cb2) cb2(d.files, d.failed); }
   }).catch(function (e) { _msg('consentMsg', e.message); showToast(e.message, true); });
 });
 
@@ -966,6 +1017,16 @@ function recordDocument(dispatchId, file) {
   return sb.from('dispatch_documents').insert({ dispatch_id: dispatchId, user_id: _profile.id, file_name: file.name,
     mime_type: file.mimeType, file_size: Number(file.size) || null, drive_file_id: file.id,
     drive_web_view_link: file.webViewLink, source: 'user_drive' }).then(function (r) { _chk(r); });
+}
+
+function recordDocuments(dispatchId, files, kind, inquiryId) {
+  var rows = (files || []).map(function (f) {
+    return { dispatch_id: dispatchId, user_id: _profile.id, file_name: f.name, mime_type: f.mimeType, file_size: Number(f.size) || null,
+             drive_file_id: f.id, drive_web_view_link: f.webViewLink, drive_path: f.path || null, source: 'user_drive',
+             doc_kind: kind, inquiry_id: inquiryId || null };
+  });
+  if (!rows.length) return Promise.resolve();
+  return sb.from('dispatch_documents').insert(rows).then(function (r) { _chk(r); });
 }
 
 function attachFile(id) {
@@ -1632,6 +1693,7 @@ function _renderReports(data) {
       '<td style="white-space:nowrap;">' +
       '<button class="act-btn ab-view" onclick="viewDetail(\'' + r.rowNum + '\')" title="View"><i class="fas fa-eye"></i></button>' +
       (r.hasFile ? '<button class="act-btn ab-dl" onclick="dlFile(\'' + r.rowNum + '\')" title="Download"><i class="fas fa-download"></i></button>' : '<button class="act-btn ab-dl" onclick="attachFile(\'' + r.rowNum + '\')" title="Attach file"><i class="fas fa-paperclip"></i></button>') +
+      '<button class="act-btn ab-view" style="background:var(--gold);color:#001433;" onclick="openCase(\'' + r.rowNum + '\')" title="Action Taken & Documents"><i class="fas fa-folder-open"></i></button>' +
       '<button class="act-btn ab-del" onclick="delReport(\'' + r.rowNum + '\')" title="Delete"><i class="fas fa-trash"></i></button>' +
       '</td></tr>';
   });
@@ -1659,6 +1721,130 @@ function dlFile(id) {
   var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
   if (!rec || !rec.fileUrl) { showToast('No file attached.', true); return; }
   window.open(rec.fileUrl, '_blank', 'noopener');
+}
+
+/* ═══════════════════════════════════════════════════
+   ACTION TAKEN (INQUIRIES) + SUPPORTING DOCUMENTS
+═══════════════════════════════════════════════════ */
+var _case = { rec: null, inquiries: [], docs: [], tab: 'a', editId: null };
+var INQ_STATUS = { pending: 'Pending', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', not_applicable: 'Not applicable' };
+
+function _reportFolder(rec) { return 'Report_' + String(rec.isoDate || '').slice(0, 4) + '-' + rec.dispatchNo; }
+function _fileIcon(d) {
+  var m = String(d.mime_type || '');
+  return m === 'application/pdf' ? '<i class="fas fa-file-pdf" style="color:var(--red2);"></i>'
+       : m.indexOf('image/') === 0 ? '<i class="fas fa-file-image" style="color:var(--navy3);"></i>' : '<i class="fas fa-file"></i>';
+}
+function _fmtSize(n) { n = Number(n) || 0; return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+
+function openCase(id) {
+  var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
+  if (!rec) return;
+  _case = { rec: rec, inquiries: [], docs: [], tab: 'a', editId: null };
+  document.getElementById('caseTitle').textContent = 'Dispatch ' + rec.dispatchNo + ' - ' + rec.reportDate;
+  openModal('caseModal'); reloadCase();
+}
+function reloadCase() {
+  var b = document.getElementById('caseBody');
+  b.innerHTML = '<div style="padding:20px;text-align:center;"><span class="spin-sm"></span> Loading...</div>';
+  callApi('getCaseData', { dispatchId: _case.rec.rowNum }).then(function (r) {
+    _case.inquiries = r.inquiries; _case.docs = r.documents; renderCase();
+  }).catch(function (e) { b.innerHTML = '<div class="alert a-err">Error: ' + esc(e.message) + '</div>'; });
+}
+function caseTab(t) { _case.tab = t; renderCase(); }
+
+function _docRow(d) {
+  return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #edf0f8;">' +
+    '<span style="font-size:1.3rem;">' + _fileIcon(d) + '</span>' +
+    '<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:.84rem;word-break:break-all;">' + esc(d.file_name) + '</div>' +
+    '<div style="font-size:.74rem;color:var(--sub);">' + esc(String(d.mime_type || '').split('/')[1] || '').toUpperCase() + ' &middot; ' + _fmtSize(d.file_size) + ' &middot; ' +
+    new Date(d.created_at).toLocaleDateString('en-GB') + '</div></div>' +
+    '<button class="act-btn ab-view" onclick="openDoc(\'' + d.id + '\')" title="View"><i class="fas fa-eye"></i></button>' +
+    '<button class="act-btn ab-dl" onclick="openDoc(\'' + d.id + '\')" title="Download"><i class="fas fa-download"></i></button>' +
+    '<button class="act-btn ab-del" onclick="delDoc(\'' + d.id + '\')" title="Delete"><i class="fas fa-trash"></i></button></div>';
+}
+
+function renderCase() {
+  var b = document.getElementById('caseBody');
+  document.getElementById('caseTabA').className = 'btn ' + (_case.tab === 'a' ? 'btn-pr' : 'btn-out');
+  document.getElementById('caseTabD').className = 'btn ' + (_case.tab === 'd' ? 'btn-pr' : 'btn-out');
+  var h = '';
+  if (_case.tab === 'a') {
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">' +
+         '<div style="font-size:.8rem;color:var(--sub);">' + _case.inquiries.length + ' inquiry record(s), oldest first</div>' +
+         '<button class="btn btn-ok" onclick="openInquiryForm()"><i class="fas fa-plus"></i> Add Inquiry / Action</button></div>';
+    if (!_case.inquiries.length) h += '<div class="alert a-info">No action recorded against this report yet.</div>';
+    _case.inquiries.forEach(function (q) {
+      var docs = _case.docs.filter(function (d) { return d.inquiry_id === q.id; });
+      h += '<div style="border:1.5px solid var(--border);border-left:4px solid var(--navy2);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px;">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;">' +
+        '<strong style="color:var(--navy2);">Inquiry ' + q.inquiry_no + '</strong>' +
+        '<span style="font-size:.74rem;font-weight:800;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:2px 10px;">' + esc(INQ_STATUS[q.action_status] || q.action_status) + '</span></div>' +
+        '<div style="font-size:.8rem;color:var(--sub);margin:4px 0;">' + esc(q.authority) + ' &middot; ' + fmtDMY(q.action_date) + '</div>' +
+        '<div style="font-size:.88rem;white-space:pre-wrap;">' + esc(q.action_details) + '</div>' +
+        (q.remarks ? '<div style="font-size:.8rem;color:var(--sub);margin-top:6px;"><strong>Remarks:</strong> ' + esc(q.remarks) + '</div>' : '') +
+        (docs.length ? '<div style="margin-top:8px;">' + docs.map(_docRow).join('') + '</div>' : '') +
+        '<div style="margin-top:8px;">' +
+        '<button class="act-btn ab-view" onclick="openInquiryForm(\'' + q.id + '\')"><i class="fas fa-pen"></i> Edit</button>' +
+        '<button class="act-btn ab-dl" onclick="uploadCaseDocs(\'' + q.id + '\')"><i class="fas fa-upload"></i> Upload Documents</button>' +
+        '<button class="act-btn ab-del" onclick="delInquiry(\'' + q.id + '\')"><i class="fas fa-trash"></i></button></div></div>';
+    });
+  } else {
+    var sup = _case.docs.filter(function (d) { return d.doc_kind === 'supporting'; });
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">' +
+         '<div style="font-size:.8rem;color:var(--sub);">' + sup.length + ' document(s) &middot; Drive folder: Reports / ' + esc(_reportFolder(_case.rec)) + ' / Supporting_Documents</div>' +
+         '<button class="btn btn-ok" onclick="uploadCaseDocs(null)"><i class="fas fa-upload"></i> Upload Documents</button></div>';
+    h += sup.length ? sup.map(_docRow).join('') : '<div class="alert a-info">No supporting documents uploaded yet.</div>';
+  }
+  b.innerHTML = h;
+}
+
+function openInquiryForm(id) {
+  var q = id ? _case.inquiries.find(function (x) { return x.id === id; }) : null;
+  _case.editId = q ? q.id : null;
+  document.getElementById('inqTitle').textContent = q ? 'Edit Inquiry ' + q.inquiry_no : 'Add Inquiry / Action';
+  document.getElementById('inqAuth').value = q ? q.authority : '';
+  document.getElementById('inqDetails').value = q ? q.action_details : '';
+  document.getElementById('inqDate').value = q ? q.action_date : new Date().toISOString().slice(0, 10);
+  document.getElementById('inqStatus').value = q ? q.action_status : 'pending';
+  document.getElementById('inqRemarks').value = q ? (q.remarks || '') : '';
+  _msg('inqMsg', ''); openModal('inquiryModal');
+}
+function saveInquiry() {
+  var f = { id: _case.editId, dispatchId: _case.rec.rowNum, authority: document.getElementById('inqAuth').value.trim(),
+    details: document.getElementById('inqDetails').value.trim(), date: document.getElementById('inqDate').value,
+    status: document.getElementById('inqStatus').value, remarks: document.getElementById('inqRemarks').value.trim() };
+  if (!f.authority || !f.details || !f.date) { _msg('inqMsg', 'Authority, action details and date are required.'); return; }
+  _busy('inqSave', true);
+  callApi('saveInquiry', f).then(function () {
+    _busy('inqSave', false); closeModal('inquiryModal'); showToast(f.id ? 'Inquiry updated.' : 'Inquiry added.'); reloadCase();
+  }).catch(function (e) { _busy('inqSave', false); _msg('inqMsg', e.message); });
+}
+function delInquiry(id) {
+  if (!confirm('Delete this inquiry and hide its documents? (It is moved out of the list; files stay in your Drive.)')) return;
+  callApi('deleteInquiry', { id: id }).then(function () { showToast('Inquiry deleted.'); reloadCase(); })
+    .catch(function (e) { showToast('Error: ' + e.message, true); });
+}
+
+function uploadCaseDocs(inquiryId) {
+  var rec = _case.rec, q = inquiryId ? _case.inquiries.find(function (x) { return x.id === inquiryId; }) : null;
+  var path = 'Reports/' + _reportFolder(rec) + (q ? '/Inquiries/Inquiry_' + q.inquiry_no + '/action_documents' : '/Supporting_Documents');
+  openUploader('docs', function (files, failed) {
+    recordDocuments(rec.rowNum, files, q ? 'inquiry' : 'supporting', q ? q.id : null).then(function () {
+      showToast(files.length + ' document(s) uploaded' + (failed && failed.length ? ', ' + failed.length + ' failed.' : '.'), !!(failed && failed.length));
+      reloadCase();
+    }).catch(function (e) { showToast('Files were saved in Drive but the links could not be recorded: ' + e.message, true); });
+  }, 'Dispatch ' + rec.dispatchNo + (q ? ' / Inquiry ' + q.inquiry_no : ''), path);
+}
+function openDoc(id) {
+  var d = _case.docs.find(function (x) { return x.id === id; });
+  if (!d || !/^https:\/\/(drive|docs)\.google\.com\//.test(d.drive_web_view_link || '')) { showToast('File link not available.', true); return; }
+  window.open(d.drive_web_view_link, '_blank', 'noopener');
+}
+function delDoc(id) {
+  if (!confirm('Remove this document from the report? (The file stays in your Drive.)')) return;
+  callApi('deleteDocument', { id: id }).then(function () { showToast('Document removed.'); reloadCase(); })
+    .catch(function (e) { showToast('Error: ' + e.message, true); });
 }
 
 function delReport(rowNum) {

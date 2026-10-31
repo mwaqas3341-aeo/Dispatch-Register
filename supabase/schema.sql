@@ -246,3 +246,8 @@ end $$;
 
 -- Admin account: created once by the project owner (auth user + user_profiles row with role = 'admin').
 -- Edge Functions: supabase/functions/admin-users, supabase/functions/change-password.
+
+-- ===== Action Taken / Supporting Documents (added 2026-10-30) =====
+-- See supabase/migrations/20261030_action_taken_and_documents.sql: table dispatch_inquiries (many per report, soft delete),
+-- dispatch_documents.doc_kind ('main'|'supporting'|'inquiry') + inquiry_id + drive_path, RPCs fn_add_inquiry / fn_update_inquiry /
+-- fn_delete_inquiry / fn_delete_document. Writes go through the RPCs; RLS limits everything to the report's owner.
