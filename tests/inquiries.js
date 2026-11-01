@@ -143,6 +143,11 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   const again = await w.compressForUpload(cres.file, () => {}); ok('already compressed files are not compressed again', again.file === cres.file && seen.length === 1);
   pickQueue.push([big]); w.pickAttachment(); await sleep(300);
   ok('new-dispatch attachment is compressed on selection and the stats are shown', w._attached && w._attached.size === 3 * 1024 * 1024 && /orig/.test($('cmpOriginal').textContent) && /Compressed/.test($('cmpFinalStatus').textContent));
+  // recipient offices are private to the user who adds them
+  w.openContactModal('add'); $('cName').value = 'DEO Test Office'; $('cEmailOffice').value = 'deo@example.pk'; w.submitContact(); await sleep(300);
+  const added = db.recipients.find(r => r.office_name === 'DEO Test Office');
+  ok('new office is saved as the user\'s own (owner = me) with no sharing scope', added && added.owner_id === 'u1' && added.scope_level === 'district' && added.tehsil === null && added.wing === null);
+  ok('no "Visible to" choice is shown; the screen says only you can see them', /Only you can see/.test($('contactModal').textContent) && !/All users in district/.test($('contactModal').textContent));
   // optional in-account password change
   w.openPwModal(); ok('change-password modal opens from inside the app', $('pwModal').classList.contains('open'));
   const tryPw = (c, a, b2) => { $('curPw').value = c; $('newPw').value = a; $('newPw2').value = b2; w.doChangePassword(); return $('pwMsg').textContent; };
