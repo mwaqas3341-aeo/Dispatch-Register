@@ -2085,12 +2085,9 @@ function _renderContactsGrid(contacts) {
   el.innerHTML = h;
 }
 
-function _fillScopeOptions() {
-  var sel = document.getElementById('cScope'), p = _profile || {};
-  sel.innerHTML = '<option value="district">All users in district ' + esc(p.district || '') + '</option>';
-  if (p.tehsil) sel.innerHTML += '<option value="tehsil">Users in tehsil ' + esc(p.tehsil) + '</option>';
-  if (p.tehsil && p.wing) sel.innerHTML += '<option value="wing">Users in ' + esc(p.tehsil) + ', wing ' + esc(p.wing) + '</option>';
-  sel.value = p.wing && p.tehsil ? 'wing' : p.tehsil ? 'tehsil' : 'district';
+function _fillScopeOptions() {   // sharing choices are gone: offices are private to their owner (hidden field kept for the old columns)
+  var sel = document.getElementById('cScope');
+  sel.innerHTML = '<option value="district">Private</option>'; sel.value = 'district';
 }
 
 function openContactModal(mode, id) {
