@@ -8,8 +8,10 @@ let handler!: (r: Request) => Promise<Response>;
 (Deno as any).serve = (h: any) => { handler = h; };
 
 const T: Record<string, any[]> = {
-  user_profiles: [{ id: "u1", full_name: "User One", status: "active", gmail_address: "one@gmail.com", must_change_password: false },
-                  { id: "u2", full_name: "User Two", status: "active", gmail_address: "two@gmail.com", must_change_password: false }],
+  user_profiles: [{ id: "u1", full_name: "User One", status: "active", gmail_address: "one@gmail.com", role: "user", auto_email_until: "2999-12-31" },
+                  { id: "u2", full_name: "User Two", status: "active", gmail_address: "two@gmail.com", role: "user", auto_email_until: null },
+                  { id: "u3", full_name: "Admin Three", status: "active", gmail_address: "three@gmail.com", role: "admin", auto_email_until: null },
+                  { id: "u4", full_name: "Expired Four", status: "active", gmail_address: "four@gmail.com", role: "user", auto_email_until: "2020-01-01" }],
   dispatch_register: [{ id: "d1", user_id: "u1", dispatch_no: 7, dispatch_year: 2026, status: "active" }],
   recipients: [{ id: "r1", email_office: "deo@example.pk", email_personal: "deo.personal@example.pk" }, { id: "r2", email_office: null, email_personal: null }],
   dispatch_recipients: [{ id: "dr1", dispatch_id: "d1", recipient_id: "r1", name_snapshot: "DEO", email_status: "pending" }, { id: "dr2", dispatch_id: "d1", recipient_id: "r2", name_snapshot: "No-mail office", email_status: "pending" }, { id: "dr3", dispatch_id: "d1", recipient_id: null, name_snapshot: "Other", email_status: "pending" }],
@@ -128,7 +130,12 @@ Deno.test("full flow", async () => {
 
   // email from the user's own Gmail
   T.dispatch_documents.push({ id: "mainDoc", dispatch_id: "d1", user_id: "u1", doc_kind: "main", status: "active", drive_file_id: "fmain", file_name: "complaint.pdf", mime_type: "application/pdf", created_at: "2026-01-01T00:00:00Z" });
-  r = await call("send", "tok-u2", { dispatch_id: "d1" }); ok(r.status === 404, "another user cannot send mail for my report");
+  r = await call("send", "tok-u2", { dispatch_id: "d1" }); j = await r.json(); ok(r.status === 403 && j.code === "EMAIL_NOT_ALLOWED" && mails.length === 0, "user without the paid plan: no email is sent");
+  r = await call("send", "tok-u4", { dispatch_id: "d1" }); j = await r.json(); ok(r.status === 403 && j.code === "EMAIL_NOT_ALLOWED" && /ended on 2020-01-01/.test(j.error) && mails.length === 0, "expired plan: no email is sent");
+  T.dispatch_register.push({ id: "d9", user_id: "u3", dispatch_no: 1, dispatch_year: 2026, status: "active", subject: "s" });
+  r = await call("send", "tok-u3", { dispatch_id: "d9" }); j = await r.json(); ok(r.status === 200, "admin (developer) account is always allowed");
+  T.dispatch_register.pop();
+  r = await call("send", "tok-u2", { dispatch_id: "d1" }); ok(r.status === 403, "unpaid user cannot send for a report that is not theirs either");
   r = await call("send", "tok-u1", { dispatch_id: "d1" }); j = await r.json();
   ok(j.sent === 1 && j.no_email === 2 && mails.length === 1, "one email sent; offices without an address recorded as no_email");
   const m = mails[0];

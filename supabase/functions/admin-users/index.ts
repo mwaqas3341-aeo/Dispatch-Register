@@ -10,6 +10,13 @@ const json = (b: unknown, s = 200) =>
 
 const WINGS = ["M-EE", "W-EE", "SE"];
 const clean = (v: unknown) => { const s = String(v ?? "").trim(); return s === "" ? null : s; };
+const todayPk = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+// "YYYY-MM-DD", a real calendar date, today or later (null = not paid)
+const planDate = (v: unknown): string | null | "bad" => {
+  const s = clean(v); if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || isNaN(Date.parse(s)) || new Date(s).toISOString().slice(0, 10) !== s || s < todayPk()) return "bad";
+  return s;
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -38,6 +45,8 @@ Deno.serve(async (req) => {
       if (!district) return json({ error: "District is required" }, 400);
       const wing = clean(body.wing);
       if (wing && !WINGS.includes(wing)) return json({ error: "Invalid wing" }, 400);
+      const until = planDate(body.auto_email_until);
+      if (until === "bad") return json({ error: "Automatic email end date must be today or a later date" }, 400);
 
       const { data: dup } = await admin.from("user_profiles").select("id").eq("cnic", cnic).maybeSingle();
       if (dup) return json({ error: "A user with this CNIC already exists" }, 409);
@@ -51,7 +60,7 @@ Deno.serve(async (req) => {
         id: created.user.id, cnic, full_name, district: district.toUpperCase(),
         designation: clean(body.designation), cell_no: clean(body.cell_no),
         tehsil: clean(body.tehsil)?.toUpperCase() ?? null, wing, markaz: clean(body.markaz),
-        role: "user", status: "active", created_by: me.id,
+        role: "user", status: "active", auto_email_until: until, created_by: me.id,
       });
       if (pe) {
         await admin.auth.admin.deleteUser(created.user.id);
@@ -66,6 +75,17 @@ Deno.serve(async (req) => {
       const { error } = await admin.auth.admin.updateUserById(p.id, { password: p.cnic });
       if (error) return json({ error: error.message }, 400);
       return json({ success: true });
+    }
+
+    if (action === "set_auto_email") {
+      const { data: t } = await admin.from("user_profiles").select("id, role").eq("id", body.user_id).maybeSingle();
+      if (!t) return json({ error: "User not found" }, 404);
+      if (t.role === "admin") return json({ error: "Developer accounts always have automatic email" }, 400);
+      const until = planDate(body.auto_email_until);
+      if (until === "bad") return json({ error: "End date must be today or a later date" }, 400);
+      const { error } = await admin.from("user_profiles").update({ auto_email_until: until }).eq("id", t.id);
+      if (error) return json({ error: error.message }, 400);
+      return json({ success: true, auto_email_until: until });
     }
 
     if (action === "set_status") {

@@ -55,9 +55,9 @@ async function authUser(req: Request, admin: ReturnType<typeof db>) {
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) throw new HttpError(401, "Please sign in again.");
   const { data: me } = await admin.from("user_profiles")
-    .select("id, full_name, status, gmail_address, must_change_password").eq("id", data.user.id).maybeSingle();
-  if (!me || me.status !== "active" || me.must_change_password) throw new HttpError(403, "Account not active");
-  return me as { id: string; full_name: string; gmail_address: string | null };
+    .select("id, full_name, status, gmail_address, role, auto_email_until").eq("id", data.user.id).maybeSingle();
+  if (!me || me.status !== "active") throw new HttpError(403, "Account not active");
+  return me as { id: string; full_name: string; gmail_address: string | null; role: string; auto_email_until: string | null };
 }
 
 // ---------- Google ----------
@@ -221,8 +221,13 @@ const b64Bytes = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; 
 const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[^@\s,;<>"]+$/;
 const MAX_MAIL_ATTACH = 10 * 1024 * 1024;
 
+// Automatic email is a paid feature: allowed for admin (developer) accounts, or until the date an admin set for the user.
+const todayPk = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+const autoEmailAllowed = (me: { role: string; auto_email_until: string | null }) => me.role === "admin" || (!!me.auto_email_until && me.auto_email_until >= todayPk());
+
 async function handleSend(req: Request, admin: ReturnType<typeof db>) {
   const me = await authUser(req, admin);
+  if (!autoEmailAllowed(me)) throw new HttpError(403, me.auto_email_until ? `Automatic email ended on ${me.auto_email_until}. Please renew.` : "Automatic email is not active for your account.", "EMAIL_NOT_ALLOWED");
   const { dispatch_id, resend } = await req.json();
   const { data: d } = await admin.from("dispatch_register")
     .select("id, dispatch_no, dispatch_year, dispatch_date, category, subject, remarks, school_name, emis_code, concerned_person, status")

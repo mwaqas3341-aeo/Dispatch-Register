@@ -143,6 +143,9 @@
     .chip-email { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Sign-out link in top bar */
+    .ad-banner { display: none; background: linear-gradient(90deg, #fff4d6, #ffe9a8); color: #5a4300; border-bottom: 1px solid #f0d27a; padding: 8px 14px; font-size: .8rem; font-weight: 700; cursor: pointer; text-align: center; }
+    .ad-banner b { color: #8a1c1c; text-decoration: underline; }
+    .plan-row { display: flex; justify-content: space-between; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 10px; margin-bottom: 6px; font-weight: 700; font-size: .88rem; }
     .signout-btn {
       background: transparent; border: 1px solid rgba(255,255,255,.3); color: rgba(255,255,255,.7);
       border-radius: 20px; padding: 3px 10px; font-size: .72rem; cursor: pointer;
@@ -438,6 +441,7 @@
       <button class="signout-btn" onclick="signOut()" title="Sign out"><i class="fas fa-sign-out-alt"></i></button>
     </div>
   </div>
+  <div class="ad-banner" id="adBanner" onclick="openAdModal()"></div>
 
   <div class="stats-bar" id="statsBar">
     <div class="stat-pill"><i class="fas fa-paper-plane" style="color:var(--gold2);"></i> Total: <strong id="st-total">—</strong></div>
@@ -616,6 +620,9 @@
             <div class="col-6"><label class="lbl">Tehsil</label><select id="aTehsil" class="inp" onchange="geoChanged('tehsil')"><option value="">Select district first</option></select></div>
             <div class="col-6"><label class="lbl">Wing</label><select id="aWing" class="inp" onchange="geoChanged('wing')"><option value="">Select tehsil first</option></select></div>
             <div class="col-6"><label class="lbl">Markaz</label><select id="aMarkaz" class="inp"><option value="">Select wing first</option></select></div>
+            <div class="col-12"><label class="lbl" style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="aPaid" onchange="document.getElementById('aPaidWrap').style.display=this.checked?'block':'none'"> Paid for automatic emails to offices</label>
+              <div id="aPaidWrap" style="display:none;margin-top:6px;"><label class="lbl">Automatic emails allowed until *</label><input type="date" id="aPaidUntil" class="inp"></div>
+              <div style="font-size:.74rem;color:var(--sub);margin-top:4px;">If not ticked, no emails are sent for this user. Plans: Rs. 300 / month, Rs. 750 / 6 months, Rs. 1,500 / year.</div></div>
           </div>
           <button class="btn btn-ok mt-3" id="adminCreateBtn" onclick="createUser()"><i class="fas fa-user-plus"></i> Create User</button>
           <div id="adminMsg" style="margin-top:10px;color:#c0392b;font-size:.85rem;min-height:18px;"></div>
@@ -702,6 +709,40 @@
     </div>
     <div class="modal-body" id="detailBody"></div>
     <div class="modal-foot"><button class="btn btn-out" onclick="closeModal('detailModal')">Close</button></div>
+  </div>
+</div>
+
+<!-- Automatic email offer (shown to users without the paid plan) -->
+<div class="modal-overlay" id="adModal">
+  <div class="modal-box">
+    <div class="modal-head"><h4><i class="fas fa-paper-plane"></i> Automatic email to offices</h4><button class="modal-close" onclick="closeModal('adModal')"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body">
+      <p id="adIntro" style="font-weight:700;margin-bottom:10px;">Do you want your reports to be automatically sent to the concerned offices every time you update a report?</p>
+      <div class="plan-row"><span>1 month</span><span>Rs. 300</span></div>
+      <div class="plan-row"><span>6 months</span><span>Rs. 750</span></div>
+      <div class="plan-row"><span>1 year (full year)</span><span>Rs. 1,500</span></div>
+      <p style="font-size:.82rem;color:var(--sub);margin:10px 0;">Contact us on WhatsApp: <b>0346 6507640</b>. After payment the administrator activates it on your account.</p>
+      <a class="btn btn-ok" id="adWa" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none;"><i class="fab fa-whatsapp"></i> Contact us on WhatsApp</a>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: automatic email plan of a user -->
+<div class="modal-overlay" id="planModal">
+  <div class="modal-box">
+    <div class="modal-head"><h4 id="planTitle">Automatic email plan</h4><button class="modal-close" onclick="closeModal('planModal')"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body">
+      <label class="lbl">Automatic emails allowed until (date)</label>
+      <input type="date" id="planDate" class="inp" style="margin-bottom:10px;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-out" onclick="planAdd(1)">+1 month (Rs. 300)</button>
+        <button class="btn btn-out" onclick="planAdd(6)">+6 months (Rs. 750)</button>
+        <button class="btn btn-out" onclick="planAdd(12)">+1 year (Rs. 1,500)</button>
+      </div>
+      <p style="font-size:.78rem;color:var(--sub);margin-top:8px;">The buttons add to the later of today or the current end date. Clear the date to switch automatic email off.</p>
+      <div id="planMsg" style="color:var(--red);font-size:.82rem;margin-top:8px;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-out" onclick="closeModal('planModal')">Cancel</button><button class="btn btn-ok" id="planBtn" onclick="savePlan()"><i class="fas fa-save"></i> Save</button></div>
   </div>
 </div>
 
@@ -1087,10 +1128,12 @@ function sendDispatchEmail(dispatchId, skipForFailedUpload) {
     if (r.failed) bits.push(r.failed + ' failed (retry with the envelope button)');
     return (bits.join('; ') || 'No email to send') + '.';
   }).catch(function (e) {
+    if (e.code === 'EMAIL_NOT_ALLOWED') return 'Saved. Emails were not sent because automatic email is not active on your account. Contact us on WhatsApp 0346 6507640.';
     return 'Saved, but email was not sent: ' + e.message + (e.code === 'DRIVE_RECONNECT' ? ' (cloud icon at the top)' : '');
   });
 }
 function resendEmail(id) {
+  if (!_planActive(_profile)) { openAdModal(); return; }
   if (!confirm('Send the email now to the offices that have not received it yet?')) return;
   showToast('Sending...');
   sendDispatchEmail(id, false).then(function (m) { showToast(m); });
@@ -1316,16 +1359,19 @@ function loadAdminUsers() {
   if (!document.getElementById('aDistrict').options.length || document.getElementById('aDistrict').options.length <= 1) loadGeoDistricts();
   var el = document.getElementById('adminUsers');
   el.innerHTML = '<span class="spin-sm"></span> Loading...';
-  sb.from('user_profiles').select('id,cnic,full_name,designation,district,tehsil,wing,markaz,role,status')
+  sb.from('user_profiles').select('id,cnic,full_name,designation,district,tehsil,wing,markaz,role,status,auto_email_until')
     .order('full_name').then(function (r) {
       var rows = _chk(r);
-      var h = '<div style="overflow-x:auto;"><table class="dtable"><thead><tr><th>Name</th><th>CNIC</th><th>Area</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+      var h = '<div style="overflow-x:auto;"><table class="dtable"><thead><tr><th>Name</th><th>CNIC</th><th>Area</th><th>Auto email</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+      _adminRows = rows;
       rows.forEach(function (u) {
         var area = [u.district, u.tehsil, u.wing, u.markaz].filter(Boolean).join(' / ');
+        var plan = u.role === 'admin' ? 'Always on (developer)' : !u.auto_email_until ? 'Not paid' : (u.auto_email_until >= _todayPk() ? 'Until ' + u.auto_email_until : 'Ended ' + u.auto_email_until);
         var self = _profile && u.id === _profile.id;
         h += '<tr><td>' + esc(u.full_name) + (u.role === 'admin' ? ' <b>(admin)</b>' : '') + '<br><small>' + esc(u.designation) + '</small></td>' +
-          '<td style="font-family:monospace;">' + esc(u.cnic) + '</td><td>' + esc(area) + '</td>' +
+          '<td style="font-family:monospace;">' + esc(u.cnic) + '</td><td>' + esc(area) + '</td><td>' + esc(plan) + '</td>' +
           '<td>' + esc(u.status) + '</td><td style="white-space:nowrap;">' +
+          (u.role === 'admin' ? '' : '<button class="act-btn ab-dl" title="Automatic email plan" onclick="openPlanModal(\'' + u.id + '\')"><i class="fas fa-envelope"></i></button>') +
           '<button class="act-btn ab-view" title="Reset password to CNIC" onclick="adminResetPw(\'' + u.id + '\')"><i class="fas fa-key"></i></button>' +
           (self ? '' : '<button class="act-btn ab-del" title="' + (u.status === 'active' ? 'Suspend' : 'Activate') + '" onclick="adminToggle(\'' + u.id + '\',\'' + (u.status === 'active' ? 'suspended' : 'active') + '\')"><i class="fas fa-' + (u.status === 'active' ? 'ban' : 'check') + '"></i></button>') +
           '</td></tr>';
@@ -1335,6 +1381,33 @@ function loadAdminUsers() {
       if (sel) sel.innerHTML = '<option value="">-- Select user --</option>' + rows.map(function (u) { return '<option value="' + u.id + '">' + esc(u.full_name) + ' (' + esc(u.cnic) + ')</option>'; }).join('');
     }).catch(function (e) { el.innerHTML = '<div class="alert a-err">Error: ' + esc(e.message) + '</div>'; });
 }
+var _adminRows = [], _planUser = null;
+function _todayPk() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' }); }
+function _addMonths(iso, n) {
+  var p = iso.split('-').map(Number), y = p[0], m = p[1] - 1 + n, d = p[2];
+  y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+  var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10);
+}
+function openPlanModal(id) {
+  var u = _adminRows.find(function (x) { return x.id === id; }); if (!u) return;
+  _planUser = u; _msg('planMsg', '');
+  document.getElementById('planTitle').textContent = 'Automatic email: ' + u.full_name;
+  document.getElementById('planDate').value = u.auto_email_until || '';
+  openModal('planModal');
+}
+function planAdd(months) {
+  var cur = document.getElementById('planDate').value, t = _todayPk();
+  document.getElementById('planDate').value = _addMonths(cur && cur > t ? cur : t, months);
+}
+function savePlan() {
+  var d = document.getElementById('planDate').value;
+  if (d && d < _todayPk()) { _msg('planMsg', 'The end date cannot be in the past.'); return; }
+  _busy('planBtn', true);
+  _adminCall({ action: 'set_auto_email', user_id: _planUser.id, auto_email_until: d || null }).then(function () {
+    _busy('planBtn', false); closeModal('planModal'); showToast(d ? 'Automatic email active until ' + d + '.' : 'Automatic email switched off.'); loadAdminUsers();
+  }).catch(function (e) { _busy('planBtn', false); _msg('planMsg', e.message); });
+}
 function _adminCall(body) { return sb.functions.invoke('admin-users', { body: body }).then(_fnResult); }
 function createUser() {
   var g = function (id) { return document.getElementById(id).value.trim(); };
@@ -1343,12 +1416,17 @@ function createUser() {
   if (!/^[0-9]{13}$/.test(cnic)) { _msg('adminMsg', 'CNIC must be exactly 13 digits.'); return; }
   if (!g('aName')) { _msg('adminMsg', 'Full name is required.'); return; }
   if (!g('aDistrict')) { _msg('adminMsg', 'District is required.'); return; }
+  var paid = document.getElementById('aPaid').checked, until = g('aPaidUntil');
+  if (paid && !until) { _msg('adminMsg', 'Choose the date until which automatic emails are allowed.'); return; }
+  if (paid && until < _todayPk()) { _msg('adminMsg', 'The automatic email end date cannot be in the past.'); return; }
   _busy('adminCreateBtn', true);
   _adminCall({ action: 'create_user', cnic: cnic, full_name: g('aName'), designation: g('aDesig'), cell_no: g('aCell'),
-    district: g('aDistrict'), tehsil: g('aTehsil'), wing: g('aWing'), markaz: g('aMarkaz') }).then(function () {
+    district: g('aDistrict'), tehsil: g('aTehsil'), wing: g('aWing'), markaz: g('aMarkaz'),
+    auto_email_until: paid ? until : null }).then(function () {
     _busy('adminCreateBtn', false);
     showToast('User created. Initial password is the CNIC.');
     ['aCnic', 'aName', 'aDesig', 'aCell'].forEach(function (i) { document.getElementById(i).value = ''; });
+    document.getElementById('aPaid').checked = false; document.getElementById('aPaidUntil').value = ''; document.getElementById('aPaidWrap').style.display = 'none';
     loadGeoDistricts();
     loadAdminUsers();
   }).catch(function (e) { _busy('adminCreateBtn', false); _msg('adminMsg', e.message); });
@@ -1493,12 +1571,28 @@ function adminToggle(id, status) {
 /* ═══════════════════════════════════════════════════
    BOOT APP
 ═══════════════════════════════════════════════════ */
+/* Automatic email is a paid feature. Developer (admin) accounts always have it. */
+var CONTACT_WA = '923466507640';
+function _planActive(p) { return !!p && (p.role === 'admin' || (!!p.auto_email_until && p.auto_email_until >= _todayPk())); }
+function updateAdBanner() {
+  var b = document.getElementById('adBanner'); if (!b) return;
+  if (!_profile || _planActive(_profile)) { b.style.display = 'none'; return; }
+  var ended = _profile.auto_email_until;
+  b.innerHTML = (ended ? 'Your automatic email plan ended on ' + esc(ended) + '. ' : 'Do you want your reports to be automatically sent to the concerned offices every time you update a report? ') + '<b>Contact us</b>';
+  b.style.display = 'block';
+  document.getElementById('adIntro').textContent = ended ? 'Your automatic email plan ended on ' + ended + '. Renew to keep reports going to the concerned offices automatically.'
+    : 'Do you want your reports to be automatically sent to the concerned offices every time you update a report?';
+  document.getElementById('adWa').href = 'https://wa.me/' + CONTACT_WA + '?text=' + encodeURIComponent('Hello, I want automatic emails for my Dispatch Register reports. Name: ' + (_profile.full_name || '') + ', CNIC: ' + (_profile.cnic || ''));
+  try { if (!sessionStorage.getItem('drAdSeen')) { sessionStorage.setItem('drAdSeen', '1'); setTimeout(openAdModal, 1200); } } catch (e) {}
+}
+function openAdModal() { if (!_profile || _planActive(_profile)) return; openModal('adModal'); }
+
 function bootApp(email) {
   document.getElementById('setupOverlay').style.display = 'none';
   document.getElementById('mainApp').style.display      = 'block';
   var isAdmin = _profile && _profile.role === 'admin';
   ['adminTabBtn', 'adminBnBtn'].forEach(function (id) { var el = document.getElementById(id); if (el) el.style.display = isAdmin ? '' : 'none'; });
-  if (isAdmin && !document.getElementById('aDistrict').value) document.getElementById('aDistrict').value = _profile.district || '';
+  updateAdBanner();
 
   if (email) {
     document.getElementById('userEmailTop').textContent = email;
