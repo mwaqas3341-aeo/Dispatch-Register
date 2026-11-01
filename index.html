@@ -681,7 +681,8 @@
         <div class="col-12"><label class="lbl">Office Email</label><input type="email" id="cEmailOffice" class="inp" placeholder="office@example.com"></div>
         <div class="col-12"><label class="lbl">Personal Email</label><input type="email" id="cEmailPersonal" class="inp" placeholder="personal@gmail.com"></div>
         <div class="col-12"><label class="lbl">Cell Number</label><input type="tel" id="cCell" class="inp" placeholder="+92 300 0000000"></div>
-        <div class="col-12"><label class="lbl">Visible to</label><select id="cScope" class="inp"></select></div>
+        <div class="col-12" style="display:none;"><select id="cScope" class="inp"></select></div>
+        <div class="col-12"><div style="font-size:.76rem;color:var(--sub);"><i class="fas fa-lock"></i> Only you can see and use the offices you add.</div></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -873,12 +874,12 @@ var API = {
     });
   },
   saveContact: function (d) {
-    var c = d.contactData, scope = c.scopeLevel || 'district';
+    var c = d.contactData, scope = 'district';   // offices are private to the user who adds them; scope only keeps the old columns filled
     if (d.mode === 'edit') {
       return sb.from('recipients').update({ office_name: c.officeName, officer_name: c.officerName || null,
         email_office: c.emailOffice || null, email_personal: c.emailPersonal || null, cell_no: c.cellNo || null })
         .eq('id', c.id).select('id').then(function (r) {
-          if (r.error) throw new Error(r.error.code === '23505' ? 'This office already exists in that scope.' : r.error.message);
+          if (r.error) throw new Error(r.error.code === '23505' ? 'You already have an office with this name.' : r.error.message);
           if (!r.data || !r.data.length) throw new Error('You can only edit recipients you added.');
           return { message: 'Contact updated successfully.' };
         });
@@ -890,7 +891,7 @@ var API = {
       scope_level: scope, district: _profile.district,
       tehsil: scope === 'district' ? null : _profile.tehsil, wing: scope === 'wing' ? _profile.wing : null
     }).then(function (r) {
-      if (r.error) throw new Error(r.error.code === '23505' ? 'This office already exists in that scope.' : r.error.message);
+      if (r.error) throw new Error(r.error.code === '23505' ? 'You already have an office with this name.' : r.error.message);
       return { message: 'Contact added successfully.' };
     });
   },
@@ -2071,12 +2072,11 @@ function restoreRec(rowNum) {
 function _renderContactsGrid(contacts) {
   var el = document.getElementById('contactsGrid');
   if (!contacts || !contacts.length) { el.innerHTML = '<p style="color:var(--sub);font-size:.88rem;">No recipients yet. Add the first one above.</p>'; return; }
-  var scopeTxt = { district: 'District', tehsil: 'Tehsil', wing: 'Tehsil + Wing' };
   var h = '';
   contacts.forEach(function (c) {
     var emails = [c.emailOffice, c.emailPersonal].filter(Boolean).join(', ');
     h += '<div class="contact-card" onclick="openContactModal(\'edit\',\'' + c.id + '\')">' +
-      '<div class="cc-name">' + esc(c.officeName) + ' <small style="font-weight:600;color:var(--sub);">· ' + (scopeTxt[c.scopeLevel] || '') + '</small></div>' +
+      '<div class="cc-name">' + esc(c.officeName)+ '</div>' +
       (c.officerName ? '<div class="cc-officer"><i class="fas fa-user" style="margin-right:4px;color:var(--sub);"></i>' + esc(c.officerName) + '</div>' : '') +
       (emails ? '<div class="cc-email"><i class="fas fa-envelope" style="margin-right:4px;"></i>' + esc(emails) + '</div>' : '') +
       (c.cellNo ? '<div style="font-size:.78rem;color:var(--sub);margin-top:2px;"><i class="fas fa-phone" style="margin-right:4px;"></i>' + esc(c.cellNo) + '</div>' : '') +
