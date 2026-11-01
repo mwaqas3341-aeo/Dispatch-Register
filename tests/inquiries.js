@@ -148,6 +148,20 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   const added = db.recipients.find(r => r.office_name === 'DEO Test Office');
   ok('new office is saved as the user\'s own (owner = me) with no sharing scope', added && added.owner_id === 'u1' && added.scope_level === 'district' && added.tehsil === null && added.wing === null);
   ok('no "Visible to" choice is shown; the screen says only you can see them', /Only you can see/.test($('contactModal').textContent) && !/All users in district/.test($('contactModal').textContent));
+  // admin create-user dropdowns come from the schools list
+  const geo = { district: ['ATTOCK', 'LAYYAH'], 'tehsil|LAYYAH': ['CHAUBARA', 'KAROR LALISAN', 'LAYYAH'], 'wing|LAYYAH|': ['M-EE', 'SE', 'W-EE'], 'wing|LAYYAH|CHAUBARA': ['SE'], 'markaz|LAYYAH|CHAUBARA|SE': ['M1', 'M2'] }; const geoCalls = [];
+  fake.rpc = ((orig) => (name, a) => name !== 'fn_geo_options' ? orig(name, a) : (geoCalls.push(a), Promise.resolve({ data: geo[a.p_level === 'district' ? 'district' : [a.p_level, a.p_district || '', ...(a.p_level === 'markaz' ? [a.p_tehsil || '', a.p_wing || ''] : a.p_level === 'wing' ? [a.p_tehsil || ''] : [])].join('|').replace(/\|+$/, a.p_level === 'tehsil' ? '' : '|')] || [], error: null })))(fake.rpc);
+  await w.loadGeoDistricts(); await sleep(100);
+  const opts = (id) => Array.from($(id).options).map(o => o.textContent);
+  ok('district dropdown is filled from the schools list', opts('aDistrict').join() === 'Select district,ATTOCK,LAYYAH');
+  $('aDistrict').value = 'LAYYAH'; w.geoChanged('district'); await sleep(150);
+  ok('choosing a district fills its tehsils (and its wings)', opts('aTehsil').join() === 'All / none,CHAUBARA,KAROR LALISAN,LAYYAH' && opts('aWing').length > 1);
+  $('aTehsil').value = 'CHAUBARA'; w.geoChanged('tehsil'); await sleep(150);
+  ok('choosing a tehsil narrows the wings', opts('aWing').join() === 'None,SE');
+  $('aWing').value = 'SE'; w.geoChanged('wing'); await sleep(150);
+  ok('choosing a wing fills the markaz list', opts('aMarkaz').join() === 'None,M1,M2');
+  $('aDistrict').value = ''; w.geoChanged('district'); await sleep(50);
+  ok('clearing the district resets the lower dropdowns', opts('aTehsil').join() === 'Select district first' && opts('aMarkaz').join() === 'Select wing first');
   // optional in-account password change
   w.openPwModal(); ok('change-password modal opens from inside the app', $('pwModal').classList.contains('open'));
   const tryPw = (c, a, b2) => { $('curPw').value = c; $('newPw').value = a; $('newPw2').value = b2; w.doChangePassword(); return $('pwMsg').textContent; };

@@ -604,7 +604,7 @@
       <div class="card">
         <div class="card-head">
           <h3><i class="fas fa-user-plus" style="margin-right:8px;"></i>Create User</h3>
-          <p>The initial password is the user's CNIC. They must change it at first login.</p>
+          <p>The initial password is the user's CNIC. Users can change it later from the key icon.</p>
         </div>
         <div class="card-body">
           <div class="row g-2">
@@ -612,10 +612,10 @@
             <div class="col-12"><label class="lbl">Full Name *</label><input type="text" id="aName" class="inp"></div>
             <div class="col-6"><label class="lbl">Designation</label><input type="text" id="aDesig" class="inp" placeholder="e.g. AEO"></div>
             <div class="col-6"><label class="lbl">Cell</label><input type="tel" id="aCell" class="inp"></div>
-            <div class="col-6"><label class="lbl">District *</label><input type="text" id="aDistrict" class="inp" placeholder="LAYYAH"></div>
-            <div class="col-6"><label class="lbl">Tehsil</label><input type="text" id="aTehsil" class="inp"></div>
-            <div class="col-6"><label class="lbl">Wing</label><select id="aWing" class="inp"><option value="">None</option><option>M-EE</option><option>W-EE</option><option>SE</option></select></div>
-            <div class="col-6"><label class="lbl">Markaz</label><input type="text" id="aMarkaz" class="inp"></div>
+            <div class="col-6"><label class="lbl">District *</label><select id="aDistrict" class="inp" onchange="geoChanged('district')"><option value="">Loading...</option></select></div>
+            <div class="col-6"><label class="lbl">Tehsil</label><select id="aTehsil" class="inp" onchange="geoChanged('tehsil')"><option value="">Select district first</option></select></div>
+            <div class="col-6"><label class="lbl">Wing</label><select id="aWing" class="inp" onchange="geoChanged('wing')"><option value="">Select tehsil first</option></select></div>
+            <div class="col-6"><label class="lbl">Markaz</label><select id="aMarkaz" class="inp"><option value="">Select wing first</option></select></div>
           </div>
           <button class="btn btn-ok mt-3" id="adminCreateBtn" onclick="createUser()"><i class="fas fa-user-plus"></i> Create User</button>
           <div id="adminMsg" style="margin-top:10px;color:#c0392b;font-size:.85rem;min-height:18px;"></div>
@@ -1280,7 +1280,40 @@ function signOut() {
 /* ═══════════════════════════════════════════════════
    ADMIN: CREATE AND MANAGE USERS
 ═══════════════════════════════════════════════════ */
+/* District > Tehsil > Wing > Markaz dropdowns for the Create User form, filled from the schools list in Supabase */
+function _geoFill(id, values, firstLabel) {
+  var el = document.getElementById(id);
+  el.innerHTML = '<option value="">' + esc(firstLabel) + '</option>' + (values || []).map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('');
+  el.value = '';
+}
+function _geoGet(level, d, t, w) {
+  return sb.rpc('fn_geo_options', { p_level: level, p_district: d || null, p_tehsil: t || null, p_wing: w || null }).then(function (r) { return _chk(r) || []; });
+}
+function loadGeoDistricts() {
+  return _geoGet('district').then(function (list) {
+    _geoFill('aDistrict', list, list.length ? 'Select district' : 'Schools list not loaded yet');
+    _geoFill('aTehsil', [], 'Select district first'); _geoFill('aWing', [], 'Select tehsil first'); _geoFill('aMarkaz', [], 'Select wing first');
+  }).catch(function (e) { _msg('adminMsg', 'Could not load districts: ' + e.message); });
+}
+function geoChanged(level) {
+  var d = document.getElementById('aDistrict').value, t = document.getElementById('aTehsil').value, w = document.getElementById('aWing').value;
+  if (level === 'district') {
+    _geoFill('aWing', [], 'Select tehsil first'); _geoFill('aMarkaz', [], 'Select wing first');
+    if (!d) return _geoFill('aTehsil', [], 'Select district first');
+    return _geoGet('tehsil', d).then(function (l) { _geoFill('aTehsil', l, 'All / none'); _geoGet('wing', d).then(function (ws) { _geoFill('aWing', ws, 'None'); }); });
+  }
+  if (level === 'tehsil') {
+    _geoFill('aMarkaz', [], 'Select wing first');
+    return _geoGet('wing', d, t).then(function (l) { _geoFill('aWing', l, 'None'); });
+  }
+  if (level === 'wing') {
+    if (!w) return _geoFill('aMarkaz', [], 'Select wing first');
+    return _geoGet('markaz', d, t, w).then(function (l) { _geoFill('aMarkaz', l, 'None'); });
+  }
+}
+
 function loadAdminUsers() {
+  if (!document.getElementById('aDistrict').options.length || document.getElementById('aDistrict').options.length <= 1) loadGeoDistricts();
   var el = document.getElementById('adminUsers');
   el.innerHTML = '<span class="spin-sm"></span> Loading...';
   sb.from('user_profiles').select('id,cnic,full_name,designation,district,tehsil,wing,markaz,role,status')
@@ -1315,8 +1348,8 @@ function createUser() {
     district: g('aDistrict'), tehsil: g('aTehsil'), wing: g('aWing'), markaz: g('aMarkaz') }).then(function () {
     _busy('adminCreateBtn', false);
     showToast('User created. Initial password is the CNIC.');
-    ['aCnic', 'aName', 'aDesig', 'aCell', 'aTehsil', 'aMarkaz'].forEach(function (i) { document.getElementById(i).value = ''; });
-    document.getElementById('aWing').value = '';
+    ['aCnic', 'aName', 'aDesig', 'aCell'].forEach(function (i) { document.getElementById(i).value = ''; });
+    loadGeoDistricts();
     loadAdminUsers();
   }).catch(function (e) { _busy('adminCreateBtn', false); _msg('adminMsg', e.message); });
 }
