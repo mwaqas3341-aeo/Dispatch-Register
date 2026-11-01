@@ -162,6 +162,36 @@ const post = (d) => w.dispatchEvent(new w.MessageEvent('message', { data: Object
   ok('choosing a wing fills the markaz list', opts('aMarkaz').join() === 'None,M1,M2');
   $('aDistrict').value = ''; w.geoChanged('district'); await sleep(50);
   ok('clearing the district resets the lower dropdowns', opts('aTehsil').join() === 'Select district first' && opts('aMarkaz').join() === 'Select wing first');
+  // paid "automatic email" plan: banner, popup, admin controls
+  await sleep(1400);
+  ok('unpaid user sees the offer banner under the top bar with the question', $('adBanner').style.display === 'block' && /automatically sent to the concerned offices/.test($('adBanner').textContent) && /Contact us/.test($('adBanner').textContent));
+  ok('popup shown once after sign-in with plans and WhatsApp number', $('adModal').classList.contains('open') && /300/.test($('adModal').textContent) && /750/.test($('adModal').textContent) && /1,500/.test($('adModal').textContent) && /0346 6507640/.test($('adModal').textContent) && /wa\.me\/923466507640/.test($('adWa').href));
+  w.closeModal('adModal'); $('adBanner').click(); ok('banner opens the popup again', $('adModal').classList.contains('open')); w.closeModal('adModal');
+  const orig = w.driveJson; w.driveJson = () => Promise.reject(Object.assign(new Error('Automatic email is not active for your account.'), { code: 'EMAIL_NOT_ALLOWED' }));
+  const msg = await w.sendDispatchEmail('d1', false); ok('without the plan the save message says emails were not sent and how to contact us', /not sent/.test(msg) && /0346 6507640/.test(msg));
+  w.resendEmail('d1'); ok('envelope button without the plan opens the offer instead of sending', $('adModal').classList.contains('open')); w.closeModal('adModal'); w.driveJson = orig;
+  const keep = w._profile; w._profile = Object.assign({}, keep, { auto_email_until: '2999-12-31' }); w.updateAdBanner();
+  ok('paid user: banner hidden', $('adBanner').style.display === 'none');
+  w._profile = Object.assign({}, keep, { auto_email_until: '2020-01-01' }); w.updateAdBanner();
+  ok('expired plan: banner says it ended', $('adBanner').style.display === 'block' && /ended on 2020-01-01/.test($('adBanner').textContent));
+  w._profile = Object.assign({}, keep, { role: 'admin' }); w.updateAdBanner(); ok('admin (developer) account: never shown the offer', $('adBanner').style.display === 'none');
+  w._profile = keep; w.updateAdBanner();
+  // admin create-user form
+  const calls2 = []; w._adminCall = (b) => { calls2.push(b); return Promise.resolve({ success: true }); };
+  $('aCnic').value = '3220222787425'; $('aName').value = 'New User'; $('aDistrict').innerHTML = '<option>LAYYAH</option>'; $('aDistrict').value = 'LAYYAH';
+  $('aPaid').checked = true; $('aPaid').onchange && $('aPaid').onchange.call($('aPaid')); $('aPaidUntil').value = '';
+  w.createUser(); ok('paid ticked without a date is refused', /date/.test($('adminMsg').textContent) && calls2.length === 0);
+  $('aPaidUntil').value = '2020-01-01'; w.createUser(); ok('past end date is refused', /past/.test($('adminMsg').textContent) && calls2.length === 0);
+  $('aPaidUntil').value = '2999-01-01'; w.createUser(); await sleep(100);
+  ok('valid plan date is sent with the new user', calls2.length === 1 && calls2[0].auto_email_until === '2999-01-01');
+  $('aPaid').checked = false; $('aDistrict').innerHTML = '<option>LAYYAH</option>'; $('aDistrict').value = 'LAYYAH'; $('aCnic').value = '3220222787426'; $('aName').value = 'Free User'; w.createUser(); await sleep(100);
+  ok('unpaid user is created with no plan date', calls2.length === 2 && calls2[1].auto_email_until === null);
+  ok('month maths clamps to month end (31 Jan + 1 month)', w._addMonths('2026-01-31', 1) === '2026-02-28' && w._addMonths('2026-08-15', 6) === '2027-02-15' && w._addMonths('2026-11-01', 12) === '2027-11-01');
+  w._adminRows = [{ id: 'uX', full_name: 'Paid Person', role: 'user', auto_email_until: '2999-01-01' }]; w.openPlanModal('uX');
+  ok('plan modal opens with the current end date', $('planModal').classList.contains('open') && $('planDate').value === '2999-01-01');
+  w.planAdd(6); ok('+6 months extends from the later of today or the current end date', $('planDate').value === '2999-07-01');
+  w.savePlan(); await sleep(100); ok('admin saves the plan through the admin function', calls2[2].action === 'set_auto_email' && calls2[2].user_id === 'uX' && calls2[2].auto_email_until === '2999-07-01');
+  w.openPlanModal('uX'); $('planDate').value = ''; w.savePlan(); await sleep(100); ok('clearing the date switches automatic email off', calls2[3].auto_email_until === null);
   // optional in-account password change
   w.openPwModal(); ok('change-password modal opens from inside the app', $('pwModal').classList.contains('open'));
   const tryPw = (c, a, b2) => { $('curPw').value = c; $('newPw').value = a; $('newPw2').value = b2; w.doChangePassword(); return $('pwMsg').textContent; };
