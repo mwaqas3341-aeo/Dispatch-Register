@@ -44,3 +44,9 @@ No Google Apps Script or Google Sheets is used any more. Supabase is the backend
 - Backend: separate Supabase project "Diary dispatch Module" (not connected to any other module).
 - `main` is the original Google Apps Script version, untouched.
 - Tests: `tests/smoke.js` (run `npm i jsdom@24 && node tests/smoke.js`) exercises login, first-login screens, admin tab and dispatch submit against a mocked backend. Database rules (per-user isolation, recipient scopes, admin-only functions) were tested directly in Supabase.
+
+## Dispatch numbers and permanent delete
+- **Reference format:** `MARKAZ INITIALS/NUMBER/YEAR`, e.g. Markaz "Fateh Pur" -> `F.P/0012/2026`. The prefix comes from the user's Markaz in their profile and is stored on each new record (`markaz_prefix`); older records fall back to the owner's current Markaz; a user with no Markaz gets `0012/2026`. Display only: Drive folder names still use the plain number.
+- **Numbering:** next number = highest number among that user's existing (active) records for the year of the selected date + 1. It restarts at 0001 every 1 January; an earlier-year date continues that year's own sequence; deleting the latest report frees its number; deleting a middle one leaves a gap (nothing is renumbered).
+- **Delete is permanent:** the page first moves the report's Drive files to the owner's Drive Trash, then `fn_delete_dispatch` removes the record, recipients, documents, inquiries and action rows. There is no Deleted list / Restore any more.
+- Migrations: `20261104_numbering_by_existing_records.sql`, then (after the page is deployed) `20261104_permanent_delete.sql`.

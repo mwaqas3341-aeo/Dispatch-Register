@@ -447,7 +447,6 @@
     <div class="stat-pill"><i class="fas fa-paper-plane" style="color:var(--gold2);"></i> Total: <strong id="st-total">—</strong></div>
     <div class="stat-pill"><i class="fas fa-calendar-day" style="color:var(--gold2);"></i> This Month: <strong id="st-month">—</strong></div>
     <div class="stat-pill"><i class="fas fa-building" style="color:var(--gold2);"></i> Offices: <strong id="st-offices">—</strong></div>
-    <div class="stat-pill"><i class="fas fa-trash" style="color:#ff8a80;"></i> Deleted: <strong id="st-deleted">—</strong></div>
   </div>
 
   <div class="desktop-tabnav">
@@ -580,10 +579,7 @@
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
             <button class="btn btn-pr" onclick="loadReports()"><i class="fas fa-search"></i> Search</button>
-            <button id="btnShowDel" class="btn btn-red" onclick="toggleDeleted(true)"><i class="fas fa-trash-restore"></i> Deleted</button>
-            <button id="btnHideDel" class="btn btn-out" style="display:none;" onclick="toggleDeleted(false)"><i class="fas fa-times"></i> Hide</button>
           </div>
-          <div id="deletedSection" style="display:none;margin-bottom:20px;"></div>
           <div id="reportSection"><div class="alert a-info">Use filters above and click Search to load records.</div></div>
         </div>
       </div>
@@ -846,6 +842,16 @@ var _compressing    = false;
 var _profile = null;
 
 function fmtNo(n) { return String(n).padStart(4, '0'); }
+// "Fateh Pur" -> "F.P"  (same rule as fn_markaz_prefix in the database)
+function markazPrefix(m) {
+  return String(m || '').trim().split(/[\s_\/.\-]+/).filter(Boolean).map(function (w) { return w.charAt(0).toUpperCase(); }).join('.');
+}
+// reference shown on every dispatch:  F.P/0012/2026   (display only - do not use in file/folder names)
+function fmtRef(no, isoDate, prefix) {
+  var year = String(isoDate || '').slice(0, 4);
+  var pre = prefix || markazPrefix(_profile && _profile.markaz);
+  return (pre ? pre + '/' : '') + fmtNo(no) + (year ? '/' + year : '');
+}
 function fmtDMY(d) { if (!d) return ''; var p = String(d).split('-'); return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : d; }
 function _chk(r) { if (r.error) throw new Error(r.error.message || String(r.error)); return r.data; }
 function _fnResult(r) {
@@ -868,7 +874,7 @@ function _mapRecord(x, i) {
   if (!offices.length && x.other_office_name) offices.push(x.other_office_name);
   var doc = (x.dispatch_documents || []).filter(function (d) { return d.status === 'active' && (d.doc_kind || 'main') === 'main'; })[0];
   return { rowNum: x.id, srNo: i + 1, isoDate: x.dispatch_date, reportDate: fmtDMY(x.dispatch_date),
-           dispatchNo: fmtNo(x.dispatch_no), selectOffice: offices.join(', '), category: x.category || '',
+           dispatchNo: fmtNo(x.dispatch_no), dispatchRef: fmtRef(x.dispatch_no, x.dispatch_date, x.markaz_prefix), selectOffice: offices.join(', '), category: x.category || '',
            description: x.subject || '', remarks: x.remarks || '', emisCode: x.emis_code || '',
            accusedName: x.concerned_person || '', schoolType: x.school_type || '', schoolName: x.school_name || '',
            hasFile: !!doc && (doc.source !== 'legacy_url' || _legacyOk(doc.legacy_url)),
@@ -876,7 +882,7 @@ function _mapRecord(x, i) {
            deletedDate: x.deleted_at ? new Date(x.deleted_at).toLocaleString('en-GB') : '' };
 }
 function _legacyOk(u) { return /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || '')); }   // old attachments live in the previous Drive
-var REC_SELECT = 'id,dispatch_date,dispatch_no,category,subject,remarks,school_type,emis_code,school_name,' +
+var REC_SELECT = 'id,dispatch_date,dispatch_no,markaz_prefix,category,subject,remarks,school_type,emis_code,school_name,' +
   'concerned_person,other_office_name,deleted_at,dispatch_recipients(name_snapshot),' +
   'dispatch_documents(id,legacy_url,source,status,doc_kind,file_name,mime_type)';
 
@@ -902,11 +908,10 @@ var API = {
     return Promise.all([
       sb.from('dispatch_register').select('id', { count: 'exact', head: true }).eq('status', 'active'),
       sb.from('dispatch_register').select('id', { count: 'exact', head: true }).eq('status', 'active').gte('dispatch_date', ms),
-      sb.from('dispatch_register').select('id', { count: 'exact', head: true }).eq('status', 'deleted'),
       sb.from('dispatch_recipients').select('name_snapshot,dispatch_register!inner(status)').eq('dispatch_register.status', 'active').limit(5000)
     ]).then(function (rs) {
-      var names = {}; (rs[3].data || []).forEach(function (x) { names[String(x.name_snapshot).toLowerCase()] = 1; });
-      return { total: rs[0].count || 0, thisMonth: rs[1].count || 0, deleted: rs[2].count || 0, offices: Object.keys(names).length };
+      var names = {}; (rs[2].data || []).forEach(function (x) { names[String(x.name_snapshot).toLowerCase()] = 1; });
+      return { total: rs[0].count || 0, thisMonth: rs[1].count || 0, offices: Object.keys(names).length };
     });
   },
   getAllContacts: function () {
@@ -955,7 +960,7 @@ var API = {
       p_concerned: f.accusedName, p_other_office: f.otherOfficeName, p_recipients: offices
     }).then(function (r) {
       if (r.error) return { success: false, error: r.error.message };
-      var row = r.data, msg = 'Dispatch #' + fmtNo(row.dispatch_no) + ' saved';
+      var row = r.data, msg = 'Dispatch ' + fmtRef(row.dispatch_no, row.dispatch_date, row.markaz_prefix) + ' saved';
       var up = !f.fileObj ? Promise.resolve('') : driveUpload(f.fileObj, { kind: 'main', dispatch_id: row.id })
         .then(function () { return ' with attachment'; })
         .catch(function (e) { return ', but the file was not uploaded (' + e.message + ')'; });
@@ -978,21 +983,17 @@ var API = {
       var off = (f.office || '').toLowerCase(), kw = (f.keyword || '').toLowerCase();
       if (off && off !== 'other') rows = rows.filter(function (x) { return x.selectOffice.toLowerCase().indexOf(off) !== -1; });
       if (kw) rows = rows.filter(function (x) {
-        return [x.selectOffice, x.category, x.description, x.remarks, x.accusedName, x.schoolName, x.emisCode, x.schoolType, x.dispatchNo].join(' ').toLowerCase().indexOf(kw) !== -1;
+        return [x.selectOffice, x.category, x.description, x.remarks, x.accusedName, x.schoolName, x.emisCode, x.schoolType, x.dispatchNo, x.dispatchRef].join(' ').toLowerCase().indexOf(kw) !== -1;
       });
       rows.forEach(function (x, i) { x.srNo = i + 1; });
       return { records: rows };
     });
   },
   deleteDispatchRecord: function (d) {
-    return sb.rpc('fn_delete_dispatch', { p_id: d.rowNum }).then(function (r) { _chk(r); return { message: 'Record moved to Deleted.' }; });
-  },
-  getDeletedReports: function () {
-    return sb.from('dispatch_register').select(REC_SELECT).eq('status', 'deleted').order('deleted_at', { ascending: false })
-      .then(function (r) { return { records: _chk(r).map(_mapRecord) }; });
-  },
-  restoreDispatchRecord: function (d) {
-    return sb.rpc('fn_restore_dispatch', { p_id: d.rowNum }).then(function (r) { _chk(r); return { message: 'Record restored.' }; });
+    return sb.rpc('fn_delete_dispatch', { p_id: d.rowNum }).then(function (r) {
+      var paths = _chk(r) || [];
+      return paths.length ? sb.storage.from('dispatch-action-files').remove(paths) : null;
+    }).then(function () { return { message: 'Report permanently deleted.' }; });
   },
   getCaseData: function (d) {
     return Promise.all([
@@ -1677,7 +1678,6 @@ function loadStats() {
     _setText('st-total',   s.total);
     _setText('st-month',   s.thisMonth);
     _setText('st-offices', s.offices);
-    _setText('st-deleted', s.deleted);
   }).catch(function () {});
 }
 
@@ -1729,7 +1729,7 @@ function fetchDispatchNo() {
   if (!d) return;
   var year = new Date(d + 'T00:00:00').getFullYear();
   callApi('getNextDispatchNo', { year: year }).then(function (r) {
-    document.getElementById('dispatchNo').textContent = r.value;
+    document.getElementById('dispatchNo').textContent = fmtRef(r.value, d);
   }).catch(function () {});
 }
 
@@ -1949,7 +1949,7 @@ function _renderReports(data) {
     h += '<tr>' +
       '<td style="color:var(--sub);">' + (r.srNo || '') + '</td>' +
       '<td style="white-space:nowrap;">' + (r.reportDate || '') + '</td>' +
-      '<td><strong style="color:var(--navy2);font-family:\'JetBrains Mono\',monospace;">' + esc(r.dispatchNo) + '</strong></td>' +
+      '<td><strong style="color:var(--navy2);font-family:\'JetBrains Mono\',monospace;">' + esc(r.dispatchRef) + '</strong></td>' +
       '<td style="max-width:120px;">' + esc(r.selectOffice) + '</td>' +
       '<td style="max-width:100px;">' + esc(r.category) + '</td>' +
       '<td style="white-space:nowrap;">' +
@@ -1968,7 +1968,7 @@ function viewDetail(rowNum) {
   if (!rec) return;
   var b = document.getElementById('detailBody');
   b.innerHTML = [
-    ['Sr. No.', rec.srNo], ['Date', rec.reportDate], ['Dispatch No.', rec.dispatchNo],
+    ['Sr. No.', rec.srNo], ['Date', rec.reportDate], ['Dispatch No.', rec.dispatchRef],
     ['Office', rec.selectOffice], ['Category', rec.category], ['School Type', rec.schoolType],
     ['School Name', rec.schoolName], ['EMIS Code', rec.emisCode], ['Accused', rec.accusedName],
     ['Description', rec.description], ['Remarks', rec.remarks]
@@ -2030,7 +2030,7 @@ function openCase(id) {
   var rec = _lastReportData.find(function (r) { return r.rowNum === id; });
   if (!rec) return;
   _case = { rec: rec, inquiries: [], docs: [], tab: 'a', editId: null };
-  document.getElementById('caseTitle').textContent = 'Dispatch ' + rec.dispatchNo + ' - ' + rec.reportDate;
+  document.getElementById('caseTitle').textContent = 'Dispatch ' + rec.dispatchRef + ' - ' + rec.reportDate;
   openModal('caseModal'); reloadCase();
 }
 function reloadCase() {
@@ -2152,45 +2152,20 @@ function delDoc(id) {
 }
 
 function delReport(rowNum) {
-  if (!confirm('Move this record to trash?')) return;
-  callApi('deleteDispatchRecord', { rowNum: rowNum }).then(function (r) {
-    showToast(r.message); loadReports(); loadStats();
-  }).catch(function (e) { showToast('Error: ' + e.message, true); });
-}
-
-function toggleDeleted(show) {
-  document.getElementById('btnShowDel').style.display = show ? 'none' : '';
-  document.getElementById('btnHideDel').style.display = show ? '' : 'none';
-  var el = document.getElementById('deletedSection');
-  if (!show) { el.style.display = 'none'; return; }
-  el.style.display = '';
-  el.innerHTML = '<span class="spin-sm"></span> Loading deleted records...';
-  callApi('getDeletedReports').then(function (r) {
-    _renderDeleted(r.records || []);
-  }).catch(function (e) { el.innerHTML = '<div class="alert a-err">Error: ' + e.message + '</div>'; });
-}
-
-function _renderDeleted(data) {
-  var el = document.getElementById('deletedSection');
-  if (!data || !data.length) { el.innerHTML = '<div class="alert">No deleted records.</div>'; return; }
-  var h = '<h6 style="color:var(--red2);font-weight:800;margin-bottom:8px;"><i class="fas fa-trash" style="margin-right:6px;"></i>Deleted Records</h6>' +
-    '<div style="overflow-x:auto;"><table class="dtable"><thead><tr>' +
-    '<th style="background:var(--red2);">Date</th><th style="background:var(--red2);">Dispatch</th>' +
-    '<th style="background:var(--red2);">Office</th><th style="background:var(--red2);">Deleted On</th>' +
-    '<th style="background:var(--red2);">Action</th></tr></thead><tbody>';
-  data.forEach(function (r) {
-    h += '<tr><td>' + (r.reportDate || '') + '</td><td>' + esc(r.dispatchNo) + '</td><td>' + esc(r.selectOffice) + '</td>' +
-      '<td>' + (r.deletedDate || '') + '</td>' +
-      '<td><button class="act-btn ab-rest" onclick="restoreRec(\'' + r.rowNum + '\')">↩ Restore</button></td></tr>';
-  });
-  el.innerHTML = h + '</tbody></table></div>';
-}
-
-function restoreRec(rowNum) {
-  if (!confirm('Restore this record?')) return;
-  callApi('restoreDispatchRecord', { rowNum: rowNum }).then(function (r) {
-    showToast(r.message); toggleDeleted(true); loadStats();
-  }).catch(function (e) { showToast('Error: ' + e.message, true); });
+  var rec = _lastReportData.find(function (r) { return r.rowNum === rowNum; });
+  if (!confirm('Permanently delete dispatch ' + (rec ? rec.dispatchRef : '') + '?\n\nThe record, its action taken / inquiries and all attached documents are removed (files go to the Trash of your Google Drive). This cannot be undone. If it is the latest number of its year, that number becomes available again.')) return;
+  // 1) move the report's Drive files to the Drive Trash, 2) delete the database record
+  sb.from('dispatch_documents').select('id,source').eq('dispatch_id', rowNum).eq('status', 'active').then(function (r) {
+    var docs = _chk(r).filter(function (x) { return x.source === 'user_drive'; }), failed = [];
+    var chain = Promise.resolve();
+    docs.forEach(function (x) { chain = chain.then(function () { return driveJson('delete', { id: x.id }).catch(function (e) { failed.push(e); }); }); });
+    return chain.then(function () {
+      if (failed.length && !confirm('Google Drive could not remove ' + failed.length + ' file(s): ' + (failed[0].message || 'error') +
+        '\n\nDelete the report anyway? Those files will stay in your Drive and you must delete them there yourself.')) throw new Error('Cancelled - nothing was deleted.');
+    });
+  }).then(function () { return callApi('deleteDispatchRecord', { rowNum: rowNum }); })
+    .then(function (r) { showToast(r.message); loadReports(); loadStats(); fetchDispatchNo(); })
+    .catch(function (e) { showToast(e.message || 'Error', true); });
 }
 
 /* ═══════════════════════════════════════════════════
