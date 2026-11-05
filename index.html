@@ -625,7 +625,7 @@
         </div>
       </div>
       <div class="card" style="margin-top:14px;">
-        <div class="card-head"><h3><i class="fas fa-users" style="margin-right:8px;"></i>Users</h3><p>Reset a password to the CNIC, or suspend / activate an account</p></div>
+        <div class="card-head"><h3><i class="fas fa-users" style="margin-right:8px;"></i>Users</h3><p>Edit details, reset a password to the CNIC, or suspend / activate an account</p></div>
         <div class="card-body"><div id="adminUsers"></div></div>
       </div>
       <div class="card" style="margin-top:14px;">
@@ -724,6 +724,28 @@
 </div>
 
 <!-- Admin: automatic email plan of a user -->
+<!-- Admin: edit a user's details (also the admin's own) -->
+<div class="modal-overlay" id="userEditModal">
+  <div class="modal-box" style="max-height:92vh;display:flex;flex-direction:column;">
+    <div class="modal-head"><h4 id="ueTitle">Edit user</h4><button class="modal-close" onclick="closeModal('userEditModal')"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body" style="overflow-y:auto;">
+      <div id="ueWho" style="font-size:.8rem;color:var(--sub);margin-bottom:10px;"></div>
+      <div class="row g-2">
+        <div class="col-12"><label class="lbl">Full Name *</label><input type="text" id="ueName" class="inp" maxlength="120"></div>
+        <div class="col-6"><label class="lbl">Designation</label><input type="text" id="ueDesig" class="inp" maxlength="80"></div>
+        <div class="col-6"><label class="lbl">Cell</label><input type="tel" id="ueCell" class="inp" maxlength="20"></div>
+        <div class="col-6"><label class="lbl">District *</label><select id="ueDistrict" class="inp" onchange="ueGeoChanged('district')"></select></div>
+        <div class="col-6"><label class="lbl">Tehsil</label><select id="ueTehsil" class="inp" onchange="ueGeoChanged('tehsil')"></select></div>
+        <div class="col-6"><label class="lbl">Wing</label><select id="ueWing" class="inp" onchange="ueGeoChanged('wing')"></select></div>
+        <div class="col-6"><label class="lbl">Markaz</label><select id="ueMarkaz" class="inp"></select></div>
+      </div>
+      <p style="font-size:.76rem;color:var(--sub);margin:10px 0 0;">The Markaz is used for the dispatch reference, e.g. Fateh Pur gives F.P/0012/2026. CNIC, role and status are not changed here.</p>
+      <div id="ueMsg" style="color:var(--red);font-size:.82rem;margin-top:8px;min-height:18px;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-out" onclick="closeModal('userEditModal')">Cancel</button><button class="btn btn-ok" id="ueSave" onclick="saveUserEdit()"><i class="fas fa-save"></i> Save</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="planModal">
   <div class="modal-box">
     <div class="modal-head"><h4 id="planTitle">Automatic email plan</h4><button class="modal-close" onclick="closeModal('planModal')"><i class="fas fa-times"></i></button></div>
@@ -1360,7 +1382,7 @@ function loadAdminUsers() {
   if (!document.getElementById('aDistrict').options.length || document.getElementById('aDistrict').options.length <= 1) loadGeoDistricts();
   var el = document.getElementById('adminUsers');
   el.innerHTML = '<span class="spin-sm"></span> Loading...';
-  sb.from('user_profiles').select('id,cnic,full_name,designation,district,tehsil,wing,markaz,role,status,auto_email_until')
+  sb.from('user_profiles').select('id,cnic,full_name,designation,cell_no,district,tehsil,wing,markaz,role,status,auto_email_until')
     .order('full_name').then(function (r) {
       var rows = _chk(r);
       var h = '<div style="overflow-x:auto;"><table class="dtable"><thead><tr><th>Name</th><th>CNIC</th><th>Area</th><th>Auto email</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
@@ -1372,6 +1394,7 @@ function loadAdminUsers() {
         h += '<tr><td>' + esc(u.full_name) + (u.role === 'admin' ? ' <b>(admin)</b>' : '') + '<br><small>' + esc(u.designation) + '</small></td>' +
           '<td style="font-family:monospace;">' + esc(u.cnic) + '</td><td>' + esc(area) + '</td><td>' + esc(plan) + '</td>' +
           '<td>' + esc(u.status) + '</td><td style="white-space:nowrap;">' +
+          '<button class="act-btn" style="background:var(--gold);color:#001433;" title="Edit details" onclick="openUserEdit(\'' + u.id + '\')"><i class="fas fa-pen"></i></button>' +
           (u.role === 'admin' ? '' : '<button class="act-btn ab-dl" title="Automatic email plan" onclick="openPlanModal(\'' + u.id + '\')"><i class="fas fa-envelope"></i></button>') +
           '<button class="act-btn ab-view" title="Reset password to CNIC" onclick="adminResetPw(\'' + u.id + '\')"><i class="fas fa-key"></i></button>' +
           (self ? '' : '<button class="act-btn ab-del" title="' + (u.status === 'active' ? 'Suspend' : 'Activate') + '" onclick="adminToggle(\'' + u.id + '\',\'' + (u.status === 'active' ? 'suspended' : 'active') + '\')"><i class="fas fa-' + (u.status === 'active' ? 'ban' : 'check') + '"></i></button>') +
@@ -1556,6 +1579,73 @@ function dispatchImport(commit) {
       rep.innerHTML = h;
     });
   }).catch(function (e) { _busy('impBtn', false); rep.innerHTML = '<span style="color:#c0392b;">' + esc(e.message) + '</span>'; });
+}
+
+
+/* ── Admin: edit a user (works for every user, including the admin's own account) ── */
+var _ueUser = null;
+function _ueVal(id) { return document.getElementById(id).value.trim(); }
+// fill a dropdown and select the saved value (matched ignoring case; kept even if it is not in the list)
+function _ueSet(id, list, first, cur) {
+  var vals = (list || []).slice();
+  if (cur) { var m = vals.filter(function (v) { return String(v).toLowerCase() === String(cur).toLowerCase(); })[0]; if (m) cur = m; else vals.push(cur); }
+  _geoFill(id, vals, first);
+  document.getElementById(id).value = cur || '';
+}
+function openUserEdit(id) {
+  var u = _adminRows.find(function (x) { return x.id === id; }); if (!u) return;
+  _ueUser = u; _msg('ueMsg', '');
+  document.getElementById('ueTitle').textContent = 'Edit ' + (u.role === 'admin' ? 'administrator' : 'user');
+  document.getElementById('ueWho').textContent = 'CNIC ' + u.cnic + (_profile && u.id === _profile.id ? ' · this is your own account' : '');
+  document.getElementById('ueName').value = u.full_name || '';
+  document.getElementById('ueDesig').value = u.designation || '';
+  document.getElementById('ueCell').value = u.cell_no || '';
+  ['ueDistrict', 'ueTehsil', 'ueWing', 'ueMarkaz'].forEach(function (i) { _ueSet(i, [], 'Loading...', ''); });
+  openModal('userEditModal');
+  _geoGet('district').then(function (dl) {
+    _ueSet('ueDistrict', dl, 'Select district', u.district);
+    var d = _ueVal('ueDistrict');
+    return (d ? _geoGet('tehsil', d) : Promise.resolve([])).then(function (tl) {
+      _ueSet('ueTehsil', tl, 'All / none', u.tehsil); var t = _ueVal('ueTehsil');
+      return (d ? _geoGet('wing', d, t) : Promise.resolve([])).then(function (wl) {
+        _ueSet('ueWing', wl, 'None', u.wing); var w = _ueVal('ueWing');
+        return (w ? _geoGet('markaz', d, t, w) : Promise.resolve([])).then(function (ml) { _ueSet('ueMarkaz', ml, 'None', u.markaz); });
+      });
+    });
+  }).catch(function (e) { _msg('ueMsg', 'Could not load the lists: ' + e.message); });
+}
+function ueGeoChanged(level) {
+  var d = _ueVal('ueDistrict'), t = _ueVal('ueTehsil'), w = _ueVal('ueWing');
+  if (level === 'district') {
+    _geoFill('ueWing', [], 'Select tehsil first'); _geoFill('ueMarkaz', [], 'Select wing first');
+    if (!d) return _geoFill('ueTehsil', [], 'Select district first');
+    return _geoGet('tehsil', d).then(function (l) { _geoFill('ueTehsil', l, 'All / none'); return _geoGet('wing', d).then(function (ws) { _geoFill('ueWing', ws, 'None'); }); });
+  }
+  if (level === 'tehsil') { _geoFill('ueMarkaz', [], 'Select wing first'); return _geoGet('wing', d, t).then(function (l) { _geoFill('ueWing', l, 'None'); }); }
+  if (level === 'wing') {
+    if (!w) return _geoFill('ueMarkaz', [], 'Select wing first');
+    return _geoGet('markaz', d, t, w).then(function (l) { _geoFill('ueMarkaz', l, 'None'); });
+  }
+}
+function saveUserEdit() {
+  if (!_ueUser) return;
+  if (!_ueVal('ueName')) { _msg('ueMsg', 'Full name is required.'); return; }
+  if (!_ueVal('ueDistrict')) { _msg('ueMsg', 'District is required.'); return; }
+  var id = _ueUser.id, self = !!_profile && id === _profile.id;
+  _msg('ueMsg', ''); _busy('ueSave', true, 1);
+  _adminCall({ action: 'update_user', user_id: id, full_name: _ueVal('ueName'), designation: _ueVal('ueDesig'), cell_no: _ueVal('ueCell'),
+    district: _ueVal('ueDistrict'), tehsil: _ueVal('ueTehsil'), wing: _ueVal('ueWing'), markaz: _ueVal('ueMarkaz') }).then(function () {
+    _busy('ueSave', false); _ueUser = null; closeModal('userEditModal'); showToast('User updated.'); loadAdminUsers();
+    if (!self) return;
+    // the admin edited their own account: refresh the profile so references and the header show the change at once
+    return sb.from('user_profiles').select('*').eq('id', id).maybeSingle().then(function (r) {
+      if (!r.data) return;
+      _profile = r.data;
+      document.getElementById('userEmailTop').textContent = r.data.full_name;
+      document.getElementById('userInitial').textContent = String(r.data.full_name || '?').charAt(0).toUpperCase();
+      fetchDispatchNo(); if (_lastReportData && _lastReportData.length) loadReports();
+    });
+  }).catch(function (e) { _busy('ueSave', false); _msg('ueMsg', e.message); });
 }
 
 function adminResetPw(id) {
