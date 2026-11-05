@@ -436,6 +436,7 @@
         <div class="user-avatar" id="userInitial">?</div>
         <span class="chip-email" id="userEmailTop">—</span>
       </div>
+ <button class="signout-btn" onclick="openProfile()" title="My profile"><i class="fas fa-user-edit"></i></button>
  <button class="signout-btn" onclick="openPwModal()" title="Change password"><i class="fas fa-key"></i></button>
       <button class="signout-btn" onclick="openDriveSettings()" title="Google Drive connection"><i class="fab fa-google-drive"></i></button>
       <button class="signout-btn" onclick="signOut()" title="Sign out"><i class="fas fa-sign-out-alt"></i></button>
@@ -743,6 +744,32 @@
 </div>
 
 <!-- Change password modal (optional, from inside the account) -->
+<!-- My profile (every user, own account only) -->
+<div class="modal-overlay" id="profileModal">
+  <div class="modal-box" style="max-height:92vh;display:flex;flex-direction:column;">
+    <div class="modal-head"><h4>My Profile</h4><button class="modal-close" onclick="closeModal('profileModal')"><i class="fas fa-times"></i></button></div>
+    <div class="modal-body" style="overflow-y:auto;">
+      <div id="pfInfo" style="font-size:.8rem;color:var(--sub);margin-bottom:10px;"></div>
+      <label class="lbl">Full Name *</label><input type="text" id="pfName" class="inp" maxlength="120" style="margin-bottom:10px;">
+      <label class="lbl">Cell No.</label><input type="tel" id="pfCell" class="inp" maxlength="20" placeholder="03xx xxxxxxx" style="margin-bottom:10px;">
+      <label class="lbl">Gmail address *</label><input type="email" id="pfGmail" class="inp" maxlength="120" placeholder="name@gmail.com">
+      <div style="font-size:.74rem;color:var(--sub);margin:3px 0 12px;">Used for Google Drive and as the reply-to of dispatch emails. Changing it means connecting Google Drive again.</div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+        <div style="font-weight:800;font-size:.82rem;color:var(--navy2);margin-bottom:8px;"><i class="fas fa-hashtag"></i> Dispatch number format</div>
+        <div class="row g-2">
+          <div class="col-7"><label class="lbl">Prefix <span style="font-weight:500;color:var(--sub);">(blank = Markaz initials)</span></label><input type="text" id="pfPrefix" class="inp" maxlength="12" oninput="profPreview()" style="text-transform:uppercase;"></div>
+          <div class="col-5"><label class="lbl">Number digits</label><select id="pfPad" class="inp" onchange="profPreview()"><option value="1">1 (12)</option><option value="2">2 (12)</option><option value="3">3 (012)</option><option value="4">4 (0012)</option><option value="5">5 (00012)</option><option value="6">6 (000012)</option></select></div>
+        </div>
+        <div style="margin-top:8px;font-size:.8rem;">Looks like: <strong id="pfPreview" style="font-family:'JetBrains Mono',monospace;color:var(--navy2);"></strong></div>
+        <div style="font-size:.72rem;color:var(--sub);margin-top:4px;">Only the way numbers are shown changes. The numbers themselves and your files are not affected. Prefix: letters, digits, dot or dash.</div>
+      </div>
+      <button class="btn btn-out" onclick="closeModal('profileModal');openPwModal()"><i class="fas fa-key"></i> Change password</button>
+      <div id="pfMsg" style="color:var(--red);font-size:.82rem;margin-top:10px;min-height:18px;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-out" onclick="closeModal('profileModal')">Cancel</button><button class="btn btn-ok" id="pfSave" onclick="saveProfile()"><i class="fas fa-save"></i> Save</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="pwModal">
   <div class="modal-box">
     <div class="modal-head"><h4><i class="fas fa-key"></i> Change password</h4><button class="modal-close" onclick="closeModal('pwModal')"><i class="fas fa-times"></i></button></div>
@@ -847,10 +874,13 @@ function markazPrefix(m) {
   return String(m || '').trim().split(/[\s_\/.\-]+/).filter(Boolean).map(function (w) { return w.charAt(0).toUpperCase(); }).join('.');
 }
 // reference shown on every dispatch:  F.P/0012/2026   (display only - do not use in file/folder names)
+function fmtNoPad(n, pad) { return String(parseInt(n, 10) || 0).padStart(pad, '0'); }
 function fmtRef(no, isoDate, prefix) {
   var year = String(isoDate || '').slice(0, 4);
-  var pre = prefix || markazPrefix(_profile && _profile.markaz);
-  return (pre ? pre + '/' : '') + fmtNo(no) + (year ? '/' + year : '');
+  // the user's own choice (My Profile) wins; otherwise the prefix stored on the record; otherwise the Markaz initials
+  var pre = (_profile && _profile.ref_prefix) || prefix || markazPrefix(_profile && _profile.markaz);
+  var pad = (_profile && _profile.ref_pad) || 4;
+  return (pre ? pre + '/' : '') + fmtNoPad(no, pad) + (year ? '/' + year : '');
 }
 function fmtDMY(d) { if (!d) return ''; var p = String(d).split('-'); return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : d; }
 function _chk(r) { if (r.error) throw new Error(r.error.message || String(r.error)); return r.data; }
@@ -1293,6 +1323,47 @@ function routeAfterLogin() {
     showState('s-done');
     setTimeout(function () { bootApp(p.full_name); }, 700);
   }).catch(function (e) { showState('s-signin'); _msg('loginMsg', e.message); });
+}
+
+/* ── My profile: every user edits their own name, cell, Gmail and dispatch-number display ── */
+function _pf(id) { return document.getElementById(id).value.trim(); }
+function openProfile() {
+  var p = _profile; if (!p) return;
+  _msg('pfMsg', '');
+  document.getElementById('pfInfo').textContent = 'CNIC ' + p.cnic + (p.designation ? ' · ' + p.designation : '') + ' · ' + [p.district, p.tehsil, p.wing, p.markaz].filter(Boolean).join(' / ') + ' (area details are changed by the administrator)';
+  document.getElementById('pfName').value = p.full_name || '';
+  document.getElementById('pfCell').value = p.cell_no || '';
+  document.getElementById('pfGmail').value = p.gmail_address || '';
+  document.getElementById('pfPrefix').value = p.ref_prefix || '';
+  document.getElementById('pfPad').value = String(p.ref_pad || 4);
+  document.getElementById('pfPrefix').placeholder = markazPrefix(p.markaz) || 'none';
+  profPreview(); openModal('profileModal');
+}
+function profPreview() {
+  var pre = _pf('pfPrefix').toUpperCase() || markazPrefix(_profile && _profile.markaz), pad = parseInt(_pf('pfPad'), 10) || 4;
+  document.getElementById('pfPreview').textContent = (pre ? pre + '/' : '') + fmtNoPad(12, pad) + '/' + new Date().getFullYear();
+}
+function saveProfile() {
+  var p = _profile; if (!p) return;
+  var name = _pf('pfName'), cell = _pf('pfCell'), gmail = _pf('pfGmail').toLowerCase(), pre = _pf('pfPrefix').toUpperCase(), pad = parseInt(_pf('pfPad'), 10);
+  _msg('pfMsg', '');
+  if (!name) { _msg('pfMsg', 'Full name is required.'); return; }
+  if (cell && !/^[0-9+ -]{7,20}$/.test(cell)) { _msg('pfMsg', 'Cell number may contain digits, + and - only (7 to 20 characters).'); return; }
+  if (!/^[^@\s]+@(gmail|googlemail)\.com$/.test(gmail)) { _msg('pfMsg', 'Please enter a valid Gmail address.'); return; }
+  if (pre && !/^[A-Z0-9.-]{1,12}$/.test(pre)) { _msg('pfMsg', 'Prefix may use letters, digits, dot and dash only (max 12).'); return; }
+  var gmailChanged = gmail !== String(p.gmail_address || '').toLowerCase();
+  if (gmailChanged && !confirm('Change your Google account to ' + gmail + '?\n\nYour existing files stay in the old Google Drive; the app can only open them while that account is connected. After saving you must connect Google Drive with the new account. Dispatch emails will use the new address as reply-to.\n\nContinue?')) return;
+  _busy('pfSave', true, 1);
+  sb.rpc('fn_update_my_profile', { p_full_name: name, p_cell_no: cell, p_gmail: gmail, p_ref_prefix: pre, p_ref_pad: pad }).then(function (r) {
+    var row = _chk(r);
+    _busy('pfSave', false);
+    _profile = row;
+    document.getElementById('userEmailTop').textContent = row.full_name;
+    document.getElementById('userInitial').textContent = String(row.full_name || '?').charAt(0).toUpperCase();
+    closeModal('profileModal'); showToast('Profile updated.');
+    fetchDispatchNo(); if (_lastReportData && _lastReportData.length) loadReports();
+    if (gmailChanged) openDriveSettings();   // the Drive connection must be made again with the new account
+  }).catch(function (e) { _busy('pfSave', false); _msg('pfMsg', e.message); });
 }
 
 function openPwModal() {
